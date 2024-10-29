@@ -46,7 +46,6 @@ func (st *ServerTunnel) handleRequestMessage(tunnelMsg protocol.TunnelMessage) {
 	reqReader := bufio.NewReader(bytes.NewReader(tunnelMsg.MsgData))
 	req, reqErr := http.ReadRequest(reqReader)
 
-	// TODO: Might need to remove this??
 	if reqErr != nil {
 		if errors.Is(reqErr, io.EOF) {
 			log.Print("Connection to mmar server closed or disconnected. Exiting...")

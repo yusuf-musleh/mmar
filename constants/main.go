@@ -10,7 +10,7 @@ const (
 	SERVER_TCP_PORT  = "6673"
 	TUNNEL_HOST      = "https://mmar.dev"
 
-	HEARTBEAT_INTERVAL        = 5 * time.Second
 	GRACEFUL_SHUTDOWN_TIMEOUT = 3 * time.Second
-	READ_BUFFER_SIZE          = 10
+	ID_CHARSET                = "abcdefghijklmnopqrstuvwxyz0123456789"
+	ID_LENGTH                 = 6
 )

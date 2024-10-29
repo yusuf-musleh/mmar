@@ -9,15 +9,22 @@ import (
 	"html"
 	"io"
 	"log"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"time"
 
 	"github.com/yusuf-musleh/mmar/constants"
 	"github.com/yusuf-musleh/mmar/internal/protocol"
+	"github.com/yusuf-musleh/mmar/internal/utils"
 )
+
+type MmarServer struct {
+	clients map[string]ClientTunnel
+}
 
 type IncomingRequest struct {
 	responseChannel chan OutgoingResponse
@@ -36,26 +43,6 @@ type ClientTunnel struct {
 	protocol.Tunnel
 	incomingChannel chan IncomingRequest
 	outgoingChannel chan protocol.TunnelMessage
-	heartbeatTicker *time.Ticker
-}
-
-func TunnelErrStateResp(errState int) http.Response {
-	// TODO: Have nicer/more elaborative error messages/pages
-	errStates := map[int]string{
-		protocol.CLIENT_DISCONNECT:     "Tunnel is closed, cannot connect to mmar client.",
-		protocol.LOCALHOST_NOT_RUNNING: "Tunneled successfully, but nothing is running on localhost.",
-	}
-	errBody := errStates[errState]
-	resp := http.Response{
-		Status:        "200 OK",
-		StatusCode:    200,
-		Proto:         "HTTP/1.0",
-		ProtoMajor:    1,
-		ProtoMinor:    0,
-		Body:          io.NopCloser(bytes.NewBufferString(errBody)),
-		ContentLength: int64(len(errBody)),
-	}
-	return resp
 }
 
 func (ct *ClientTunnel) close() {
@@ -76,16 +63,28 @@ func (ct *ClientTunnel) close() {
 	log.Printf("Tunnel connection closed: %v", ct.Conn.LocalAddr().String())
 }
 
-// TODO: This should probably change and should not have `ClientTunnel` as the receiver
-func (ct *ClientTunnel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (ms *MmarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("%s - %s%s", r.Method, html.EscapeString(r.URL.Path), r.URL.RawQuery)
+
+	// Extract subdomain to retrieve related client tunnel
+	subdomain := utils.ExtractSubdomain(r.Host)
+	clientTunnel, clientExists := ms.clients[subdomain]
+
+	if !clientExists {
+		// Create a response for Tunnel closed/not connected
+		resp := TunnelErrStateResp(protocol.CLIENT_DISCONNECT)
+		w.WriteHeader(resp.StatusCode)
+		respBody, _ := io.ReadAll(resp.Body)
+		w.Write(respBody)
+		return
+	}
 
 	// Create response channel for tunneled request
 	respChannel := make(chan OutgoingResponse)
 
 	// Check if the tunnel was closed, if so,
 	// send back HTTP response right away
-	if ct.incomingChannel == nil {
+	if clientTunnel.incomingChannel == nil {
 		// Create a response for Tunnel closed/not connected
 		resp := TunnelErrStateResp(protocol.CLIENT_DISCONNECT)
 		w.WriteHeader(resp.StatusCode)
@@ -97,7 +96,7 @@ func (ct *ClientTunnel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 
 	// Tunnel the request
-	ct.incomingChannel <- IncomingRequest{
+	clientTunnel.incomingChannel <- IncomingRequest{
 		responseChannel: respChannel,
 		responseWriter:  w,
 		request:         r,
@@ -119,10 +118,88 @@ func (ct *ClientTunnel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Write the response body to original client
 		w.Write(resp.body)
 	}
-
 }
 
-func (ct *ClientTunnel) processTunneledRequests() {
+func (ms *MmarServer) GenerateUniqueId() string {
+	reservedIDs := []string{"", "admin", "stats"}
+
+	var randSeed *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	generatedId := ""
+	for _, exists := ms.clients[generatedId]; exists || slices.Contains(reservedIDs, generatedId); {
+		b := make([]byte, constants.ID_LENGTH)
+		for i := range b {
+			b[i] = constants.ID_CHARSET[randSeed.Intn(len(constants.ID_CHARSET))]
+		}
+		generatedId = string(b)
+	}
+
+	return generatedId
+}
+
+func (ms *MmarServer) newClientTunnel(conn net.Conn) *ClientTunnel {
+	// Generate unique ID for client
+	uniqueId := ms.GenerateUniqueId()
+	tunnel := protocol.Tunnel{
+		Id:   uniqueId,
+		Conn: conn,
+	}
+
+	// Create channels to tunnel requests to and recieve responses from
+	incomingChannel := make(chan IncomingRequest)
+	outgoingChannel := make(chan protocol.TunnelMessage)
+
+	// Create client tunnel
+	clientTunnel := ClientTunnel{
+		tunnel,
+		incomingChannel,
+		outgoingChannel,
+	}
+
+	ms.clients[uniqueId] = clientTunnel
+
+	log.Printf("Tunnel opened at: %v", uniqueId)
+
+	return &clientTunnel
+}
+
+func (ms *MmarServer) handleTcpConnection(conn net.Conn) {
+	log.Printf("TCP Conn from %s", conn.LocalAddr().String())
+
+	clientTunnel := ms.newClientTunnel(conn)
+
+	// Process Tunnel Messages coming from mmar client
+	go ms.processTunnelMessages(clientTunnel)
+
+	// Start goroutine to process tunneled requests
+	go ms.processTunneledRequests(clientTunnel)
+}
+
+func (ms *MmarServer) closeClientTunnel(ct *ClientTunnel) {
+	delete(ms.clients, ct.Id)
+	ct.close()
+}
+
+func TunnelErrStateResp(errState int) http.Response {
+	// TODO: Have nicer/more elaborative error messages/pages
+	errStates := map[int]string{
+		protocol.CLIENT_DISCONNECT:     "Tunnel is closed, cannot connect to mmar client.",
+		protocol.LOCALHOST_NOT_RUNNING: "Tunneled successfully, but nothing is running on localhost.",
+	}
+	errBody := errStates[errState]
+	resp := http.Response{
+		Status:        "200 OK",
+		StatusCode:    200,
+		Proto:         "HTTP/1.0",
+		ProtoMajor:    1,
+		ProtoMinor:    0,
+		Body:          io.NopCloser(bytes.NewBufferString(errBody)),
+		ContentLength: int64(len(errBody)),
+	}
+	return resp
+}
+
+func (ms *MmarServer) processTunneledRequests(ct *ClientTunnel) {
 	for {
 		// Read requests coming in tunnel channel
 		incomingReq, ok := <-ct.incomingChannel
@@ -142,7 +219,11 @@ func (ct *ClientTunnel) processTunneledRequests() {
 		}
 
 		// Wait for response for this request to come back from outgoing channel
-		respTunnelMsg, _ := <-ct.outgoingChannel
+		respTunnelMsg, ok := <-ct.outgoingChannel
+		if !ok {
+			// Channel closed, client disconencted, shutdown goroutine
+			return
+		}
 
 		// Read response for forwarded request
 		respReader := bufio.NewReader(bytes.NewReader(respTunnelMsg.MsgData))
@@ -151,7 +232,7 @@ func (ct *ClientTunnel) processTunneledRequests() {
 		if respErr != nil {
 			if errors.Is(respErr, io.ErrUnexpectedEOF) || errors.Is(respErr, net.ErrClosed) {
 				incomingReq.cancel()
-				ct.close()
+				ms.closeClientTunnel(ct)
 				return
 			}
 			failedReq := fmt.Sprintf("%s - %s%s", incomingReq.request.Method, html.EscapeString(incomingReq.request.URL.Path), incomingReq.request.URL.RawQuery)
@@ -181,7 +262,7 @@ func (ct *ClientTunnel) processTunneledRequests() {
 	}
 }
 
-func (ct *ClientTunnel) processTunnelMessages() {
+func (ms *MmarServer) processTunnelMessages(ct *ClientTunnel) {
 	for {
 		tunnelMsg, err := ct.ReceiveMessage()
 		if err != nil {
@@ -206,24 +287,11 @@ func (ct *ClientTunnel) processTunnelMessages() {
 			ct.outgoingChannel <- notRunningMsg
 		case protocol.CLIENT_DISCONNECT:
 			log.Printf("Got CLIENT_DISCONNECT TUNNEL MESSAGE\n")
-			ct.close()
+			ms.closeClientTunnel(ct)
+			// ct.close()
 			return
 		}
 	}
-}
-
-func (ct *ClientTunnel) handleTcpConnection() {
-	log.Printf("TCP Conn from %s", ct.Conn.LocalAddr().String())
-
-	// Create channel to tunnel request to
-	ct.incomingChannel = make(chan IncomingRequest)
-	ct.outgoingChannel = make(chan protocol.TunnelMessage)
-
-	// Process Tunnel Messages coming from mmar client
-	go ct.processTunnelMessages()
-
-	// Start goroutine to process tunneled requests
-	go ct.processTunneledRequests()
 }
 
 func Run(tcpPort string, httpPort string) {
@@ -232,8 +300,10 @@ func Run(tcpPort string, httpPort string) {
 	signal.Notify(sigInt, os.Interrupt)
 
 	mux := http.NewServeMux()
-	clientTunnel := ClientTunnel{}
-	mux.Handle("/", &clientTunnel)
+
+	// Initialize Mmar Server
+	mmarServer := MmarServer{clients: map[string]ClientTunnel{}}
+	mux.Handle("/", &mmarServer)
 
 	go func() {
 		log.Print("Listening for TCP Requests...")
@@ -247,8 +317,7 @@ func Run(tcpPort string, httpPort string) {
 			if err != nil {
 				log.Fatalf("Failed to accept TCP connection: %v", err)
 			}
-			clientTunnel.Conn = conn
-			go clientTunnel.handleTcpConnection()
+			go mmarServer.handleTcpConnection(conn)
 		}
 	}()
 
