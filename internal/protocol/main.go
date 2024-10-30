@@ -15,6 +15,7 @@ const (
 	HEARTBEAT = iota + 1
 	REQUEST
 	RESPONSE
+	CLIENT_CONNECT
 	CLIENT_DISCONNECT
 	LOCALHOST_NOT_RUNNING
 )
@@ -23,6 +24,7 @@ var MESSAGE_MAPPING = map[int]string{
 	HEARTBEAT:             "HEARTBEAT",
 	REQUEST:               "REQUEST",
 	RESPONSE:              "RESPONSE",
+	CLIENT_CONNECT:        "CLIENT_CONNECT",
 	CLIENT_DISCONNECT:     "CLIENT_DISCONNECT",
 	LOCALHOST_NOT_RUNNING: "LOCALHOST_NOT_RUNNING",
 }
@@ -118,6 +120,8 @@ func (tm *TunnelMessage) deserializeMessage(reader *bufio.Reader) error {
 		msgType = REQUEST
 	case "RESPONSE\n":
 		msgType = RESPONSE
+	case "CLIENT_CONNECT\n":
+		msgType = CLIENT_CONNECT
 	case "CLIENT_DISCONNECT\n":
 		msgType = CLIENT_DISCONNECT
 	case "LOCALHOST_NOT_RUNNING\n":

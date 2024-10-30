@@ -156,9 +156,14 @@ func (ms *MmarServer) newClientTunnel(conn net.Conn) *ClientTunnel {
 		outgoingChannel,
 	}
 
+	// Add client tunnel to clients
 	ms.clients[uniqueId] = clientTunnel
 
-	log.Printf("Tunnel opened at: %v", uniqueId)
+	// Send unique ID to client
+	reqMessage := protocol.TunnelMessage{MsgType: protocol.CLIENT_CONNECT, MsgData: []byte(uniqueId)}
+	if err := clientTunnel.SendMessage(reqMessage); err != nil {
+		log.Fatal(err)
+	}
 
 	return &clientTunnel
 }

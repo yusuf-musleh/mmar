@@ -105,6 +105,9 @@ func (st *ServerTunnel) ProcessTunnelMessages(ctx context.Context) {
 			}
 
 			switch tunnelMsg.MsgType {
+			case protocol.CLIENT_CONNECT:
+				log.Printf("Got CLIENT_CONNECT TUNNEL MESSAGE\n")
+				log.Printf("Tunnel through: %v", string(tunnelMsg.MsgData))
 			case protocol.REQUEST:
 				log.Printf("Got REQUEST TUNNEL MESSAGE\n")
 				go st.handleRequestMessage(tunnelMsg)
