@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/yusuf-musleh/mmar/constants"
@@ -25,6 +26,7 @@ import (
 var CLIENT_MAX_TUNNELS_REACHED = errors.New("Client reached max tunnels limit")
 
 type MmarServer struct {
+	mu           sync.Mutex
 	clients      map[string]ClientTunnel
 	tunnelsPerIP map[string][]string
 }
@@ -155,6 +157,9 @@ func (ms *MmarServer) TunnelLimitedIP(ip string) bool {
 }
 
 func (ms *MmarServer) newClientTunnel(conn net.Conn) (*ClientTunnel, error) {
+	// Acquire lock to create new client tunnel data
+	ms.mu.Lock()
+
 	// Generate unique ID for client
 	uniqueId := ms.GenerateUniqueId()
 	tunnel := protocol.Tunnel{
@@ -183,6 +188,8 @@ func (ms *MmarServer) newClientTunnel(conn net.Conn) (*ClientTunnel, error) {
 			log.Fatal(err)
 		}
 		clientTunnel.close(false)
+		// Release lock once errored
+		ms.mu.Unlock()
 		return nil, CLIENT_MAX_TUNNELS_REACHED
 	}
 
@@ -191,6 +198,9 @@ func (ms *MmarServer) newClientTunnel(conn net.Conn) (*ClientTunnel, error) {
 
 	// Associate tunnel with client IP
 	ms.tunnelsPerIP[clientIP] = append(ms.tunnelsPerIP[clientIP], uniqueId)
+
+	// Release lock once created
+	ms.mu.Unlock()
 
 	// Send unique ID to client
 	reqMessage := protocol.TunnelMessage{MsgType: protocol.CLIENT_CONNECT, MsgData: []byte(uniqueId)}
