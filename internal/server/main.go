@@ -22,8 +22,11 @@ import (
 	"github.com/yusuf-musleh/mmar/internal/utils"
 )
 
+var CLIENT_MAX_TUNNELS_REACHED = errors.New("Client reached max tunnels limit")
+
 type MmarServer struct {
-	clients map[string]ClientTunnel
+	clients      map[string]ClientTunnel
+	tunnelsPerIP map[string][]string
 }
 
 type IncomingRequest struct {
@@ -45,8 +48,8 @@ type ClientTunnel struct {
 	outgoingChannel chan protocol.TunnelMessage
 }
 
-func (ct *ClientTunnel) close() {
-	log.Printf("Client disconnected: %v, closing tunnel...", ct.Conn.LocalAddr().String())
+func (ct *ClientTunnel) close(graceful bool) {
+	log.Printf("Client disconnected: %v, closing tunnel...", ct.Conn.RemoteAddr().String())
 	// Close the TunneledRequests channel
 	close(ct.incomingChannel)
 	// Clear the TunneledRequests channel
@@ -56,11 +59,14 @@ func (ct *ClientTunnel) close() {
 	// Clear the TunneledResponses channel
 	ct.outgoingChannel = nil
 
-	// Wait a little for final response to complete, then close the connection
-	gracefulCloseTimer := time.NewTimer(constants.GRACEFUL_SHUTDOWN_TIMEOUT)
-	<-gracefulCloseTimer.C
+	if graceful {
+		// Wait a little for final response to complete, then close the connection
+		gracefulCloseTimer := time.NewTimer(constants.GRACEFUL_SHUTDOWN_TIMEOUT)
+		<-gracefulCloseTimer.C
+	}
+
 	ct.Conn.Close()
-	log.Printf("Tunnel connection closed: %v", ct.Conn.LocalAddr().String())
+	log.Printf("Tunnel connection closed: %v", ct.Conn.RemoteAddr().String())
 }
 
 func (ms *MmarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -137,7 +143,18 @@ func (ms *MmarServer) GenerateUniqueId() string {
 	return generatedId
 }
 
-func (ms *MmarServer) newClientTunnel(conn net.Conn) *ClientTunnel {
+func (ms *MmarServer) TunnelLimitedIP(ip string) bool {
+	tunnels, tunnelsExist := ms.tunnelsPerIP[ip]
+
+	// Initialize tunnels list for IP
+	if !tunnelsExist {
+		ms.tunnelsPerIP[ip] = []string{}
+	}
+
+	return len(tunnels) >= constants.MAX_TUNNELS_PER_IP
+}
+
+func (ms *MmarServer) newClientTunnel(conn net.Conn) (*ClientTunnel, error) {
 	// Generate unique ID for client
 	uniqueId := ms.GenerateUniqueId()
 	tunnel := protocol.Tunnel{
@@ -156,8 +173,24 @@ func (ms *MmarServer) newClientTunnel(conn net.Conn) *ClientTunnel {
 		outgoingChannel,
 	}
 
+	// Check if IP reached max tunnel limit
+	clientIP := utils.ExtractIP(conn.RemoteAddr().String())
+	limitedIP := ms.TunnelLimitedIP(clientIP)
+	// If so, send limit message to client and close client tunnel
+	if limitedIP {
+		limitMessage := protocol.TunnelMessage{MsgType: protocol.CLIENT_TUNNEL_LIMIT}
+		if err := clientTunnel.SendMessage(limitMessage); err != nil {
+			log.Fatal(err)
+		}
+		clientTunnel.close(false)
+		return nil, CLIENT_MAX_TUNNELS_REACHED
+	}
+
 	// Add client tunnel to clients
 	ms.clients[uniqueId] = clientTunnel
+
+	// Associate tunnel with client IP
+	ms.tunnelsPerIP[clientIP] = append(ms.tunnelsPerIP[clientIP], uniqueId)
 
 	// Send unique ID to client
 	reqMessage := protocol.TunnelMessage{MsgType: protocol.CLIENT_CONNECT, MsgData: []byte(uniqueId)}
@@ -165,13 +198,22 @@ func (ms *MmarServer) newClientTunnel(conn net.Conn) *ClientTunnel {
 		log.Fatal(err)
 	}
 
-	return &clientTunnel
+	return &clientTunnel, nil
 }
 
 func (ms *MmarServer) handleTcpConnection(conn net.Conn) {
-	log.Printf("TCP Conn from %s", conn.LocalAddr().String())
+	log.Printf("TCP Conn from %s", conn.RemoteAddr().String())
 
-	clientTunnel := ms.newClientTunnel(conn)
+	clientTunnel, err := ms.newClientTunnel(conn)
+
+	if err != nil {
+		if errors.Is(err, CLIENT_MAX_TUNNELS_REACHED) {
+			// Close the connection when client max tunnels limit reached
+			conn.Close()
+			return
+		}
+		log.Fatalf("Failed to create ClientTunnel: %v", err)
+	}
 
 	// Process Tunnel Messages coming from mmar client
 	go ms.processTunnelMessages(clientTunnel)
@@ -181,8 +223,20 @@ func (ms *MmarServer) handleTcpConnection(conn net.Conn) {
 }
 
 func (ms *MmarServer) closeClientTunnel(ct *ClientTunnel) {
+	// Remove Client Tunnel from clients
 	delete(ms.clients, ct.Id)
-	ct.close()
+
+	// Remove Client Tunnel from client IP
+	clientIP := utils.ExtractIP(ct.Conn.RemoteAddr().String())
+	tunnels := ms.tunnelsPerIP[clientIP]
+	index := slices.Index(tunnels, ct.Id)
+	if index != -1 {
+		tunnels = slices.Delete(tunnels, index, index+1)
+		ms.tunnelsPerIP[clientIP] = tunnels
+	}
+
+	// Gracefully close the Client Tunnel
+	ct.close(true)
 }
 
 func TunnelErrStateResp(errState int) http.Response {
@@ -307,7 +361,10 @@ func Run(tcpPort string, httpPort string) {
 	mux := http.NewServeMux()
 
 	// Initialize Mmar Server
-	mmarServer := MmarServer{clients: map[string]ClientTunnel{}}
+	mmarServer := MmarServer{
+		clients:      map[string]ClientTunnel{},
+		tunnelsPerIP: map[string][]string{},
+	}
 	mux.Handle("/", &mmarServer)
 
 	go func() {

@@ -17,6 +17,7 @@ const (
 	RESPONSE
 	CLIENT_CONNECT
 	CLIENT_DISCONNECT
+	CLIENT_TUNNEL_LIMIT
 	LOCALHOST_NOT_RUNNING
 )
 
@@ -26,6 +27,7 @@ var MESSAGE_MAPPING = map[int]string{
 	RESPONSE:              "RESPONSE",
 	CLIENT_CONNECT:        "CLIENT_CONNECT",
 	CLIENT_DISCONNECT:     "CLIENT_DISCONNECT",
+	CLIENT_TUNNEL_LIMIT:   "CLIENT_TUNNEL_LIMIT",
 	LOCALHOST_NOT_RUNNING: "LOCALHOST_NOT_RUNNING",
 }
 
@@ -112,6 +114,7 @@ func (tm *TunnelMessage) deserializeMessage(reader *bufio.Reader) error {
 	var msgType int
 	msgData := tm.readMessageData(msgLength, reader)
 
+	// TODO: is there a better way to do this?
 	switch msgPrefix {
 	case "HEARTBEAT\n":
 		log.Printf("Got HEARTBEAT\n")
@@ -124,6 +127,8 @@ func (tm *TunnelMessage) deserializeMessage(reader *bufio.Reader) error {
 		msgType = CLIENT_CONNECT
 	case "CLIENT_DISCONNECT\n":
 		msgType = CLIENT_DISCONNECT
+	case "CLIENT_TUNNEL_LIMIT\n":
+		msgType = CLIENT_TUNNEL_LIMIT
 	case "LOCALHOST_NOT_RUNNING\n":
 		msgType = LOCALHOST_NOT_RUNNING
 	default:

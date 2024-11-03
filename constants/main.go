@@ -13,4 +13,6 @@ const (
 	GRACEFUL_SHUTDOWN_TIMEOUT = 3 * time.Second
 	ID_CHARSET                = "abcdefghijklmnopqrstuvwxyz0123456789"
 	ID_LENGTH                 = 6
+
+	MAX_TUNNELS_PER_IP = 5
 )

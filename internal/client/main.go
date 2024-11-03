@@ -108,6 +108,14 @@ func (st *ServerTunnel) ProcessTunnelMessages(ctx context.Context) {
 			case protocol.CLIENT_CONNECT:
 				log.Printf("Got CLIENT_CONNECT TUNNEL MESSAGE\n")
 				log.Printf("Tunnel through: %v", string(tunnelMsg.MsgData))
+			case protocol.CLIENT_TUNNEL_LIMIT:
+				log.Printf("Got CLIENT_TUNNEL_LIMIT TUNNEL MESSAGE\n")
+				log.Printf(
+					"Maximum number of Tunnels created limit reached (%v/%v). Please shutdown existing tunnels to create new ones.",
+					constants.MAX_TUNNELS_PER_IP,
+					constants.MAX_TUNNELS_PER_IP,
+				)
+				os.Exit(0)
 			case protocol.REQUEST:
 				log.Printf("Got REQUEST TUNNEL MESSAGE\n")
 				go st.handleRequestMessage(tunnelMsg)
