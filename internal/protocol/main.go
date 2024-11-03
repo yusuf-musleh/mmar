@@ -4,16 +4,18 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"strconv"
+
+	"github.com/yusuf-musleh/mmar/constants"
 )
 
 const (
-	HEARTBEAT = iota + 1
-	REQUEST
+	REQUEST = uint8(iota + 1)
 	RESPONSE
 	CLIENT_CONNECT
 	CLIENT_DISCONNECT
@@ -21,28 +23,24 @@ const (
 	LOCALHOST_NOT_RUNNING
 )
 
-var MESSAGE_MAPPING = map[int]string{
-	HEARTBEAT:             "HEARTBEAT",
-	REQUEST:               "REQUEST",
-	RESPONSE:              "RESPONSE",
-	CLIENT_CONNECT:        "CLIENT_CONNECT",
-	CLIENT_DISCONNECT:     "CLIENT_DISCONNECT",
-	CLIENT_TUNNEL_LIMIT:   "CLIENT_TUNNEL_LIMIT",
-	LOCALHOST_NOT_RUNNING: "LOCALHOST_NOT_RUNNING",
+var INVALID_MESSAGE_PROTOCOL_VERSION = errors.New("Invalid Message Protocol Version")
+var INVALID_MESSAGE_TYPE = errors.New("Invalid Tunnel Message Type")
+
+func isValidTunnelMessageType(mt uint8) (uint8, error) {
+	// Iterate through all the message type, from first to last, checking
+	// if the provided message type matches one of them
+	for msgType := REQUEST; msgType <= LOCALHOST_NOT_RUNNING; msgType++ {
+		if mt == msgType {
+			return msgType, nil
+		}
+	}
+
+	return 0, INVALID_MESSAGE_TYPE
 }
 
-type Tunnel struct {
-	Id   string
-	Conn net.Conn
-}
-
-type TunnelInterface interface {
-	ProcessTunnelMessages(ctx context.Context)
-}
-
-func TunnelErrStateResp(errState int) http.Response {
+func TunnelErrStateResp(errState uint8) http.Response {
 	// TODO: Have nicer/more elaborative error messages/pages
-	errStates := map[int]string{
+	errStates := map[uint8]string{
 		CLIENT_DISCONNECT:     "Tunnel is closed, cannot connect to mmar client.",
 		LOCALHOST_NOT_RUNNING: "Tunneled successfully, but nothing is running on localhost.",
 	}
@@ -59,30 +57,47 @@ func TunnelErrStateResp(errState int) http.Response {
 	return resp
 }
 
+type Tunnel struct {
+	Id   string
+	Conn net.Conn
+}
+
+type TunnelInterface interface {
+	ProcessTunnelMessages(ctx context.Context)
+}
+
 type TunnelMessage struct {
-	MsgType int
+	MsgType uint8
 	MsgData []byte
 }
 
 func (tm *TunnelMessage) serializeMessage() ([]byte, error) {
 	serializedMsg := [][]byte{}
 
-	// TODO: Come up with more effecient protocol for server<->client
-	// Determine message type to add prefix
-	msgType := MESSAGE_MAPPING[tm.MsgType]
-	if msgType == "" {
+	// Determine and validate message type to add prefix
+	msgType, err := isValidTunnelMessageType(tm.MsgType)
+	if err != nil {
+		// TODO: Gracefully handle non-protocol message received
 		log.Fatalf("Invalid TunnelMessage type: %v:", tm.MsgType)
 	}
 
-	// Add the message type
-	serializedMsg = append(serializedMsg, []byte(msgType))
+	// Add version of TunnelMessage protocol and TunnelMessage type
+	serializedMsg = append(
+		serializedMsg,
+		[]byte{byte(constants.TUNNEL_MESSAGE_PROTOCOL_VERSION), byte(msgType)},
+	)
+
 	// Add message data bytes length
 	serializedMsg = append(serializedMsg, []byte(strconv.Itoa(len(tm.MsgData))))
+
+	// Add delimiter to know where the data content starts in the message
+	serializedMsg = append(serializedMsg, []byte{byte(constants.TUNNEL_MESSAGE_DATA_DELIMITER)})
+
 	// Add the message data
 	serializedMsg = append(serializedMsg, tm.MsgData)
 
-	// Combine all the data separated by new lines
-	return bytes.Join(serializedMsg, []byte("\n")), nil
+	// Combine all the data with no separators
+	return bytes.Join(serializedMsg, nil), nil
 }
 
 func (tm *TunnelMessage) readMessageData(length int, reader *bufio.Reader) []byte {
@@ -96,9 +111,25 @@ func (tm *TunnelMessage) readMessageData(length int, reader *bufio.Reader) []byt
 }
 
 func (tm *TunnelMessage) deserializeMessage(reader *bufio.Reader) error {
-	msgPrefix, err := reader.ReadString('\n')
+	msgProtocolVersion, err := reader.ReadByte()
 	if err != nil {
 		return err
+	}
+
+	// Check if the message protocol version is correct
+	if uint8(msgProtocolVersion) != constants.TUNNEL_MESSAGE_PROTOCOL_VERSION {
+		return INVALID_MESSAGE_PROTOCOL_VERSION
+	}
+
+	msgPrefix, err := reader.ReadByte()
+	if err != nil {
+		return err
+	}
+
+	msgType, err := isValidTunnelMessageType(msgPrefix)
+	if err != nil {
+		// TODO: Gracefully handle non-protocol message received
+		log.Fatalf("Invalid TunnelMessage prefix: %v", msgPrefix)
 	}
 
 	msgLengthStr, err := reader.ReadString('\n')
@@ -106,35 +137,14 @@ func (tm *TunnelMessage) deserializeMessage(reader *bufio.Reader) error {
 		return err
 	}
 
+	// Determine the length of the data by stripping out the '\n' and convert to int
 	msgLength, err := strconv.Atoi(msgLengthStr[:len(msgLengthStr)-1])
 	if err != nil {
+		// TODO: Gracefully handle invalid message data length
 		log.Fatalf("Could not parse message length: %v", msgLengthStr)
 	}
 
-	var msgType int
 	msgData := tm.readMessageData(msgLength, reader)
-
-	// TODO: is there a better way to do this?
-	switch msgPrefix {
-	case "HEARTBEAT\n":
-		log.Printf("Got HEARTBEAT\n")
-		msgType = HEARTBEAT
-	case "REQUEST\n":
-		msgType = REQUEST
-	case "RESPONSE\n":
-		msgType = RESPONSE
-	case "CLIENT_CONNECT\n":
-		msgType = CLIENT_CONNECT
-	case "CLIENT_DISCONNECT\n":
-		msgType = CLIENT_DISCONNECT
-	case "CLIENT_TUNNEL_LIMIT\n":
-		msgType = CLIENT_TUNNEL_LIMIT
-	case "LOCALHOST_NOT_RUNNING\n":
-		msgType = LOCALHOST_NOT_RUNNING
-	default:
-		// TODO: Gracefully handle non-protocol message received
-		log.Fatalf("Invalid TunnelMessage prefix: %v", msgPrefix)
-	}
 
 	tm.MsgType = msgType
 	tm.MsgData = msgData

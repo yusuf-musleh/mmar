@@ -80,7 +80,7 @@ func (ms *MmarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if !clientExists {
 		// Create a response for Tunnel closed/not connected
-		resp := TunnelErrStateResp(protocol.CLIENT_DISCONNECT)
+		resp := protocol.TunnelErrStateResp(protocol.CLIENT_DISCONNECT)
 		w.WriteHeader(resp.StatusCode)
 		respBody, _ := io.ReadAll(resp.Body)
 		w.Write(respBody)
@@ -94,7 +94,7 @@ func (ms *MmarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// send back HTTP response right away
 	if clientTunnel.incomingChannel == nil {
 		// Create a response for Tunnel closed/not connected
-		resp := TunnelErrStateResp(protocol.CLIENT_DISCONNECT)
+		resp := protocol.TunnelErrStateResp(protocol.CLIENT_DISCONNECT)
 		w.WriteHeader(resp.StatusCode)
 		respBody, _ := io.ReadAll(resp.Body)
 		w.Write(respBody)
@@ -114,7 +114,7 @@ func (ms *MmarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	select {
 	case <-ctx.Done(): // Tunnel is closed if context is cancelled
 		// Create a response for Tunnel closed/not connected
-		resp := TunnelErrStateResp(protocol.CLIENT_DISCONNECT)
+		resp := protocol.TunnelErrStateResp(protocol.CLIENT_DISCONNECT)
 		w.WriteHeader(resp.StatusCode)
 		respBody, _ := io.ReadAll(resp.Body)
 		w.Write(respBody)
@@ -249,25 +249,6 @@ func (ms *MmarServer) closeClientTunnel(ct *ClientTunnel) {
 	ct.close(true)
 }
 
-func TunnelErrStateResp(errState int) http.Response {
-	// TODO: Have nicer/more elaborative error messages/pages
-	errStates := map[int]string{
-		protocol.CLIENT_DISCONNECT:     "Tunnel is closed, cannot connect to mmar client.",
-		protocol.LOCALHOST_NOT_RUNNING: "Tunneled successfully, but nothing is running on localhost.",
-	}
-	errBody := errStates[errState]
-	resp := http.Response{
-		Status:        "200 OK",
-		StatusCode:    200,
-		Proto:         "HTTP/1.0",
-		ProtoMajor:    1,
-		ProtoMinor:    0,
-		Body:          io.NopCloser(bytes.NewBufferString(errBody)),
-		ContentLength: int64(len(errBody)),
-	}
-	return resp
-}
-
 func (ms *MmarServer) processTunneledRequests(ct *ClientTunnel) {
 	for {
 		// Read requests coming in tunnel channel
@@ -339,16 +320,12 @@ func (ms *MmarServer) processTunnelMessages(ct *ClientTunnel) {
 		}
 
 		switch tunnelMsg.MsgType {
-		case protocol.HEARTBEAT:
-			// TODO: Need to implement some heartbeat logic here
-			log.Printf("Got HEARTBEAT TUNNEL MESSAGE\n")
-			continue
 		case protocol.RESPONSE:
 			log.Printf("Got RESPONSE TUNNEL MESSAGE\n")
 			ct.outgoingChannel <- tunnelMsg
 		case protocol.LOCALHOST_NOT_RUNNING:
 			// Create a response for Tunnel connected but localhost not running
-			resp := TunnelErrStateResp(protocol.LOCALHOST_NOT_RUNNING)
+			resp := protocol.TunnelErrStateResp(protocol.LOCALHOST_NOT_RUNNING)
 			// Writing response to buffer to tunnel it back
 			var responseBuff bytes.Buffer
 			resp.Write(&responseBuff)
