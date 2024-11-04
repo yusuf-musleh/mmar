@@ -8,32 +8,34 @@ import (
 	"github.com/yusuf-musleh/mmar/constants"
 	"github.com/yusuf-musleh/mmar/internal/client"
 	"github.com/yusuf-musleh/mmar/internal/server"
+	"github.com/yusuf-musleh/mmar/internal/utils"
 )
-
-func invalidSubcommands() {
-	fmt.Println("Add the subcommand 'server' or 'client'")
-	os.Exit(0)
-}
 
 func main() {
 	serverCmd := flag.NewFlagSet(constants.SERVER_CMD, flag.ExitOnError)
 	serverHttpPort := serverCmd.String(
-		"http-port", constants.SERVER_HTTP_PORT, "define port where mmar will bind to and run on server for HTTP requests.",
+		"http-port", constants.SERVER_HTTP_PORT, constants.SERVER_HTTP_PORT_HELP,
 	)
 	serverTcpPort := serverCmd.String(
-		"tcp-port", constants.SERVER_TCP_PORT, "define port where mmar will bind to and run on server for TCP connections.",
+		"tcp-port", constants.SERVER_TCP_PORT, constants.SERVER_TCP_PORT_HELP,
 	)
 
 	clientCmd := flag.NewFlagSet(constants.CLIENT_CMD, flag.ExitOnError)
 	clientPort := clientCmd.String(
-		"port", constants.CLIENT_PORT, "define a port where mmar will bind to and run will run on client.",
+		"port", constants.CLIENT_PORT, constants.CLIENT_PORT_HELP,
 	)
 	clientTunnelHost := clientCmd.String(
-		"tunnel-host", constants.TUNNEL_HOST, "define host domain of mmar server for client to connect to.",
+		"tunnel-host", constants.TUNNEL_HOST, constants.TUNNEL_HOST_HELP,
 	)
 
+	versionCmd := flag.NewFlagSet(constants.VERSION_CMD, flag.ExitOnError)
+	versionCmd.Usage = utils.MmarVersionUsage
+
+	flag.Usage = utils.MmarUsage
+
 	if len(os.Args) < 2 {
-		invalidSubcommands()
+		utils.MmarUsage()
+		os.Exit(0)
 	}
 
 	switch os.Args[1] {
@@ -51,7 +53,10 @@ func main() {
 		fmt.Println("  tunnel-host:", *clientTunnelHost)
 		fmt.Println("  tail:", clientCmd.Args())
 		client.Run(*serverTcpPort, *clientTunnelHost)
+	case constants.VERSION_CMD:
+		versionCmd.Parse(os.Args[2:])
+		fmt.Println("mmar version", constants.MMAR_VERSION)
 	default:
-		invalidSubcommands()
+		utils.MmarUsage()
 	}
 }
