@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -71,11 +72,45 @@ func (ct *ClientTunnel) close(graceful bool) {
 	log.Printf("Tunnel connection closed: %v", ct.Conn.RemoteAddr().String())
 }
 
+func (ms *MmarServer) handleServerStats(w http.ResponseWriter) {
+	stats := map[string]any{}
+
+	// Add total connected clients count
+	stats["connectedClientsCount"] = len(ms.clients)
+
+	// Add list of connected clients, including only relevant fields
+	clientStats := []map[string]string{}
+	for _, val := range ms.clients {
+		client := map[string]string{
+			"id":        val.Id,
+			"createdOn": val.CreatedOn.Format(time.RFC3339),
+		}
+		clientStats = append(clientStats, client)
+	}
+	stats["connectedClients"] = clientStats
+
+	// Marshal the result
+	marshalledStats, err := json.Marshal(stats)
+
+	if err != nil {
+		log.Fatalf("Failed to marshal server stats: %v", err)
+	}
+	w.WriteHeader(200)
+	w.Write(marshalledStats)
+}
+
 func (ms *MmarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("%s - %s%s", r.Method, html.EscapeString(r.URL.Path), r.URL.RawQuery)
 
 	// Extract subdomain to retrieve related client tunnel
 	subdomain := utils.ExtractSubdomain(r.Host)
+
+	// Handle stats subdomain
+	if subdomain == "stats" {
+		ms.handleServerStats(w)
+		return
+	}
+
 	clientTunnel, clientExists := ms.clients[subdomain]
 
 	if !clientExists {
@@ -162,8 +197,9 @@ func (ms *MmarServer) newClientTunnel(conn net.Conn) (*ClientTunnel, error) {
 	// Generate unique ID for client
 	uniqueId := ms.GenerateUniqueId()
 	tunnel := protocol.Tunnel{
-		Id:   uniqueId,
-		Conn: conn,
+		Id:        uniqueId,
+		Conn:      conn,
+		CreatedOn: time.Now(),
 	}
 
 	// Create channels to tunnel requests to and recieve responses from

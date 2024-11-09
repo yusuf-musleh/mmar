@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/yusuf-musleh/mmar/constants"
 )
@@ -58,8 +59,9 @@ func TunnelErrStateResp(errState uint8) http.Response {
 }
 
 type Tunnel struct {
-	Id   string
-	Conn net.Conn
+	Id        string
+	Conn      net.Conn
+	CreatedOn time.Time
 }
 
 type TunnelInterface interface {
@@ -77,7 +79,6 @@ type TunnelMessage struct {
 // | Version | Msg Type   | Length of Msg Data  | Delimiter  | Message Data            |
 // | (1 byte)| (1 byte)   | (1 or more bytes)   | (1 byte)   | (Variable Length)       |
 // +---------+------------+---------------------+------------+-------------------------+
-//
 func (tm *TunnelMessage) serializeMessage() ([]byte, error) {
 	serializedMsg := [][]byte{}
 
