@@ -48,7 +48,7 @@ func TunnelErrStateResp(errState uint8) http.Response {
 	errBody := errStates[errState]
 	resp := http.Response{
 		Status:        "200 OK",
-		StatusCode:    200,
+		StatusCode:    http.StatusOK,
 		Proto:         "HTTP/1.0",
 		ProtoMajor:    1,
 		ProtoMinor:    0,

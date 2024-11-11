@@ -72,7 +72,16 @@ func (ct *ClientTunnel) close(graceful bool) {
 	log.Printf("Tunnel connection closed: %v", ct.Conn.RemoteAddr().String())
 }
 
-func (ms *MmarServer) handleServerStats(w http.ResponseWriter) {
+// Serves simple stats for mmar server behind Basic Authentication
+func (ms *MmarServer) handleServerStats(w http.ResponseWriter, r *http.Request) {
+	// Check Basic Authentication
+	username, password, ok := r.BasicAuth()
+	if !ok || !utils.ValidCredentials(username, password) {
+		w.Header().Add("WWW-Authenticate", "Basic realm=\"stats\"")
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
 	stats := map[string]any{}
 
 	// Add total connected clients count
@@ -95,7 +104,7 @@ func (ms *MmarServer) handleServerStats(w http.ResponseWriter) {
 	if err != nil {
 		log.Fatalf("Failed to marshal server stats: %v", err)
 	}
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 	w.Write(marshalledStats)
 }
 
@@ -107,7 +116,7 @@ func (ms *MmarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Handle stats subdomain
 	if subdomain == "stats" {
-		ms.handleServerStats(w)
+		ms.handleServerStats(w, r)
 		return
 	}
 
