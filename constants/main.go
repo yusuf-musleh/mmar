@@ -13,6 +13,9 @@ const (
 	SERVER_TCP_PORT  = "6673"
 	TUNNEL_HOST      = "https://mmar.dev"
 
+	SERVER_STATS_DEFAULT_USERNAME = "admin"
+	SERVER_STATS_DEFAULT_PASSWORD = "admin"
+
 	SERVER_HTTP_PORT_HELP = "Define port where mmar will bind to and run on server for HTTP requests."
 	SERVER_TCP_PORT_HELP  = "Define port where mmar will bind to and run on server for TCP connections."
 

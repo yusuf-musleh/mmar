@@ -67,15 +67,33 @@ func decodeHash(hashStr string) []byte {
 // Check if provided Basic Auth credentials are valid
 func ValidCredentials(username string, password string) bool {
 	// Compute Hash for provided username and password
-	hashedUsername := sha256.Sum256([]byte(username))
-	hashedPassword := sha256.Sum256([]byte(password))
+	usernameHash := sha256.Sum256([]byte(username))
+	passwordHash := sha256.Sum256([]byte(password))
 
-	// Retrieve actual Hashes for username and password
-	envHashedUsername := os.Getenv("USERNAME_HASH")
-	envHashedPassword := os.Getenv("PASSWORD_HASH")
+	// Receive expected Hash for username
+	envUsernameHash, foundUsernameHash := os.LookupEnv("USERNAME_HASH")
+	var usernameDecodedHash []byte
+	if foundUsernameHash {
+		usernameDecodedHash = decodeHash(envUsernameHash)
+	} else {
+		// Fallback to default if not set
+		defaultUsernameHash := sha256.Sum256([]byte(constants.SERVER_STATS_DEFAULT_USERNAME))
+		usernameDecodedHash = defaultUsernameHash[:]
+	}
+
+	// Receive exected Hash for password
+	envPasswordHash, foundPasswordHash := os.LookupEnv("PASSWORD_HASH")
+	var passwordDecodedHash []byte
+	if foundPasswordHash {
+		passwordDecodedHash = decodeHash(envPasswordHash)
+	} else {
+		// Fallback to default if not set
+		defaultPasswordHash := sha256.Sum256([]byte(constants.SERVER_STATS_DEFAULT_PASSWORD))
+		passwordDecodedHash = defaultPasswordHash[:]
+	}
 
 	// Compare them to check if they match and are valid
-	validUsername := subtle.ConstantTimeCompare(hashedUsername[:], decodeHash(envHashedUsername)) == 1
-	validPassword := subtle.ConstantTimeCompare(hashedPassword[:], decodeHash(envHashedPassword)) == 1
+	validUsername := subtle.ConstantTimeCompare(usernameHash[:], usernameDecodedHash) == 1
+	validPassword := subtle.ConstantTimeCompare(passwordHash[:], passwordDecodedHash) == 1
 	return validUsername && validPassword
 }
