@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"log"
 	"net"
@@ -18,6 +17,7 @@ import (
 	"time"
 
 	"github.com/yusuf-musleh/mmar/constants"
+	"github.com/yusuf-musleh/mmar/internal/logger"
 	"github.com/yusuf-musleh/mmar/internal/protocol"
 )
 
@@ -62,7 +62,6 @@ func (st *ServerTunnel) handleRequestMessage(tunnelMsg protocol.TunnelMessage) {
 	// Convert request to target localhost
 	localizeRequest(req)
 
-	log.Printf("%s - %s%s", req.Method, html.EscapeString(req.URL.Path), req.URL.RawQuery)
 	resp, fwdErr := fwdClient.Do(req)
 	if fwdErr != nil {
 		if errors.Is(fwdErr, syscall.ECONNREFUSED) {
@@ -75,6 +74,8 @@ func (st *ServerTunnel) handleRequestMessage(tunnelMsg protocol.TunnelMessage) {
 
 		log.Fatalf("Failed to forward: %v", fwdErr)
 	}
+
+	logger.LogHTTP(req, resp.StatusCode, resp.ContentLength)
 
 	// Writing response to buffer to tunnel it back
 	var responseBuff bytes.Buffer
@@ -98,7 +99,7 @@ func (st *ServerTunnel) ProcessTunnelMessages(ctx context.Context) {
 					log.Print("Tunnel connection closed from Server. Exiting...")
 					os.Exit(0)
 				} else if errors.Is(err, net.ErrClosed) {
-					log.Print("Tunnel connection disconnected from Server. Existing...")
+					log.Print("Tunnel connection disconnected from Server. Exiting...")
 					os.Exit(0)
 				}
 				log.Fatalf("Failed to receive message from server tunnel: %v", err)
@@ -106,10 +107,9 @@ func (st *ServerTunnel) ProcessTunnelMessages(ctx context.Context) {
 
 			switch tunnelMsg.MsgType {
 			case protocol.CLIENT_CONNECT:
-				log.Printf("Got CLIENT_CONNECT TUNNEL MESSAGE\n")
+				// TODO: Show better log/message to user about how to access tunnel
 				log.Printf("Tunnel through: %v", string(tunnelMsg.MsgData))
 			case protocol.CLIENT_TUNNEL_LIMIT:
-				log.Printf("Got CLIENT_TUNNEL_LIMIT TUNNEL MESSAGE\n")
 				log.Printf(
 					"Maximum number of Tunnels created limit reached (%v/%v). Please shutdown existing tunnels to create new ones.",
 					constants.MAX_TUNNELS_PER_IP,
@@ -117,7 +117,6 @@ func (st *ServerTunnel) ProcessTunnelMessages(ctx context.Context) {
 				)
 				os.Exit(0)
 			case protocol.REQUEST:
-				log.Printf("Got REQUEST TUNNEL MESSAGE\n")
 				go st.handleRequestMessage(tunnelMsg)
 			}
 		}

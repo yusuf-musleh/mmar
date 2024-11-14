@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/yusuf-musleh/mmar/constants"
+	"github.com/yusuf-musleh/mmar/internal/logger"
 	"github.com/yusuf-musleh/mmar/internal/protocol"
 	"github.com/yusuf-musleh/mmar/internal/utils"
 )
@@ -109,8 +110,6 @@ func (ms *MmarServer) handleServerStats(w http.ResponseWriter, r *http.Request) 
 }
 
 func (ms *MmarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.Printf("%s - %s%s", r.Method, html.EscapeString(r.URL.Path), r.URL.RawQuery)
-
 	// Extract subdomain to retrieve related client tunnel
 	subdomain := utils.ExtractSubdomain(r.Host)
 
@@ -365,7 +364,6 @@ func (ms *MmarServer) processTunnelMessages(ct *ClientTunnel) {
 
 		switch tunnelMsg.MsgType {
 		case protocol.RESPONSE:
-			log.Printf("Got RESPONSE TUNNEL MESSAGE\n")
 			ct.outgoingChannel <- tunnelMsg
 		case protocol.LOCALHOST_NOT_RUNNING:
 			// Create a response for Tunnel connected but localhost not running
@@ -376,9 +374,7 @@ func (ms *MmarServer) processTunnelMessages(ct *ClientTunnel) {
 			notRunningMsg := protocol.TunnelMessage{MsgType: protocol.RESPONSE, MsgData: responseBuff.Bytes()}
 			ct.outgoingChannel <- notRunningMsg
 		case protocol.CLIENT_DISCONNECT:
-			log.Printf("Got CLIENT_DISCONNECT TUNNEL MESSAGE\n")
 			ms.closeClientTunnel(ct)
-			// ct.close()
 			return
 		}
 	}
@@ -396,7 +392,7 @@ func Run(tcpPort string, httpPort string) {
 		clients:      map[string]ClientTunnel{},
 		tunnelsPerIP: map[string][]string{},
 	}
-	mux.Handle("/", &mmarServer)
+	mux.Handle("/", logger.LoggerMiddleware(&mmarServer))
 
 	go func() {
 		log.Print("Listening for TCP Requests...")
