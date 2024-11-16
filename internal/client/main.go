@@ -75,7 +75,7 @@ func (st *ServerTunnel) handleRequestMessage(tunnelMsg protocol.TunnelMessage) {
 		log.Fatalf("Failed to forward: %v", fwdErr)
 	}
 
-	logger.LogHTTP(req, resp.StatusCode, resp.ContentLength)
+	logger.LogHTTP(req, resp.StatusCode, resp.ContentLength, false)
 
 	// Writing response to buffer to tunnel it back
 	var responseBuff bytes.Buffer
