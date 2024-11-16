@@ -4,6 +4,7 @@ import (
 	"html"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/yusuf-musleh/mmar/internal/utils"
 )
@@ -28,7 +29,7 @@ func (wrw *WrappedResponseWriter) Write(data []byte) (int, error) {
 }
 
 // Log HTTP requests including their response's status code and response data length
-func LogHTTP(req *http.Request, statusCode int, contentLength int64, includeSubdomain bool) {
+func LogHTTP(req *http.Request, statusCode int, contentLength int64, includeSubdomain bool, colored bool) {
 	hasQueryParams := ""
 	if req.URL.RawQuery != "" {
 		hasQueryParams = "?"
@@ -39,17 +40,61 @@ func LogHTTP(req *http.Request, statusCode int, contentLength int64, includeSubd
 		subdomainInfo = "[" + utils.ExtractSubdomain(req.Host) + "] "
 	}
 
+	if !colored {
+		log.Printf(
+			"%s\"%s %s%s%s %s\" %d %d",
+			subdomainInfo,
+			req.Method,
+			html.EscapeString(req.URL.Path),
+			hasQueryParams,
+			req.URL.RawQuery,
+			req.Proto,
+			statusCode,
+			contentLength,
+		)
+		return
+	}
+
+	// TODO: Need to refactor this code to be cleaner.
+
+	var strStatusCode string
+	switch statusCode / 100 {
+	case 2:
+		strStatusCode = "\033[32m" + strconv.Itoa(statusCode) + "\033[0m"
+	case 3:
+		strStatusCode = "\033[33m" + strconv.Itoa(statusCode) + "\033[0m"
+	case 4:
+		strStatusCode = "\033[31m" + strconv.Itoa(statusCode) + "\033[0m"
+	case 5:
+		strStatusCode = "\033[31m" + strconv.Itoa(statusCode) + "\033[0m"
+	default:
+		strStatusCode = strconv.Itoa(statusCode)
+	}
+
+	var coloredMethod string
+	switch req.Method {
+	case "GET":
+		coloredMethod = "\033[33m" + req.Method + "\033[0m"
+	case "POST", "PATCH", "PUT":
+		coloredMethod = "\033[34m" + req.Method + "\033[0m"
+	case "DELETE":
+		coloredMethod = "\033[31m" + req.Method + "\033[0m"
+	default:
+		coloredMethod = req.Method
+	}
+
 	log.Printf(
-		"%s\"%s %s%s%s %s\" %d %d",
+		"%s\"%s %s%s%s %s\" %s %d",
 		subdomainInfo,
-		req.Method,
+		coloredMethod,
 		html.EscapeString(req.URL.Path),
 		hasQueryParams,
 		req.URL.RawQuery,
 		req.Proto,
-		statusCode,
+		strStatusCode,
 		contentLength,
 	)
+
 }
 
 // Logger middle to log all HTTP requests handled
@@ -58,6 +103,6 @@ func LoggerMiddleware(h http.Handler) http.Handler {
 		// Initializing WrappedResponseWrapper with default values
 		wrw := WrappedResponseWriter{ResponseWriter: w, statusCode: http.StatusOK, contentLength: 0}
 		h.ServeHTTP(&wrw, r)
-		LogHTTP(r, wrw.statusCode, wrw.contentLength, true)
+		LogHTTP(r, wrw.statusCode, wrw.contentLength, true, false)
 	})
 }
