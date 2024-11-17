@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/yusuf-musleh/mmar/constants"
 	"github.com/yusuf-musleh/mmar/internal/utils"
 )
 
@@ -26,6 +27,10 @@ func (wrw *WrappedResponseWriter) WriteHeader(statusCode int) {
 func (wrw *WrappedResponseWriter) Write(data []byte) (int, error) {
 	wrw.contentLength = int64(len(data))
 	return wrw.ResponseWriter.Write(data)
+}
+
+func ColorLogStr(color string, logstr string) string {
+	return color + logstr + constants.RESET
 }
 
 // Log HTTP requests including their response's status code and response data length
@@ -55,30 +60,30 @@ func LogHTTP(req *http.Request, statusCode int, contentLength int64, includeSubd
 		return
 	}
 
-	// TODO: Need to refactor this code to be cleaner.
-
+	// Color HTTP status code
 	var strStatusCode string
 	switch statusCode / 100 {
 	case 2:
-		strStatusCode = "\033[32m" + strconv.Itoa(statusCode) + "\033[0m"
+		strStatusCode = ColorLogStr(constants.GREEN, strconv.Itoa(statusCode))
 	case 3:
-		strStatusCode = "\033[33m" + strconv.Itoa(statusCode) + "\033[0m"
+		strStatusCode = ColorLogStr(constants.YELLOW, strconv.Itoa(statusCode))
 	case 4:
-		strStatusCode = "\033[31m" + strconv.Itoa(statusCode) + "\033[0m"
+		strStatusCode = ColorLogStr(constants.RED, strconv.Itoa(statusCode))
 	case 5:
-		strStatusCode = "\033[31m" + strconv.Itoa(statusCode) + "\033[0m"
+		strStatusCode = ColorLogStr(constants.RED, strconv.Itoa(statusCode))
 	default:
 		strStatusCode = strconv.Itoa(statusCode)
 	}
 
+	// Color HTTP method
 	var coloredMethod string
 	switch req.Method {
 	case "GET":
-		coloredMethod = "\033[33m" + req.Method + "\033[0m"
+		coloredMethod = ColorLogStr(constants.YELLOW, req.Method)
 	case "POST", "PATCH", "PUT":
-		coloredMethod = "\033[34m" + req.Method + "\033[0m"
+		coloredMethod = ColorLogStr(constants.BLUE, req.Method)
 	case "DELETE":
-		coloredMethod = "\033[31m" + req.Method + "\033[0m"
+		coloredMethod = ColorLogStr(constants.RED, req.Method)
 	default:
 		coloredMethod = req.Method
 	}

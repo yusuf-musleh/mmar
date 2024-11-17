@@ -29,6 +29,13 @@ const (
 
 	MAX_TUNNELS_PER_IP        = 5
 	GRACEFUL_SHUTDOWN_TIMEOUT = 3 * time.Second
+
+	// TERMINAL ANSI ESCAPED COLORS
+	RED    = "\033[31m"
+	GREEN  = "\033[32m"
+	YELLOW = "\033[33m"
+	BLUE   = "\033[34m"
+	RESET  = "\033[0m"
 )
 
 var (
