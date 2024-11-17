@@ -21,8 +21,14 @@ func main() {
 	)
 
 	clientCmd := flag.NewFlagSet(constants.CLIENT_CMD, flag.ExitOnError)
-	clientPort := clientCmd.String(
-		"port", constants.CLIENT_PORT, constants.CLIENT_PORT_HELP,
+	clientLocalPort := clientCmd.String(
+		"local-port", constants.CLIENT_LOCAL_PORT, constants.CLIENT_LOCAL_PORT_HELP,
+	)
+	clientTunnelHttpPort := clientCmd.String(
+		"tunnel-http-port", constants.SERVER_HTTP_PORT, constants.CLIENT_HTTP_PORT_HELP,
+	)
+	clientTunnelTcpPort := clientCmd.String(
+		"tunnel-tcp-port", constants.SERVER_TCP_PORT, constants.CLIENT_TCP_PORT_HELP,
 	)
 	clientTunnelHost := clientCmd.String(
 		"tunnel-host", constants.TUNNEL_HOST, constants.TUNNEL_HOST_HELP,
@@ -41,18 +47,20 @@ func main() {
 	switch os.Args[1] {
 	case constants.SERVER_CMD:
 		serverCmd.Parse(os.Args[2:])
-		fmt.Println("subcommand 'server'")
-		fmt.Println("  http port:", *serverHttpPort)
-		fmt.Println("  tcp port:", *serverTcpPort)
-		fmt.Println("  tail:", serverCmd.Args())
-		server.Run(*serverTcpPort, *serverHttpPort)
+		mmarServerConfig := server.ConfigOptions{
+			HttpPort: *serverHttpPort,
+			TcpPort:  *serverTcpPort,
+		}
+		server.Run(mmarServerConfig)
 	case constants.CLIENT_CMD:
 		clientCmd.Parse(os.Args[2:])
-		fmt.Println("subcommand 'client'")
-		fmt.Println("  port:", *clientPort)
-		fmt.Println("  tunnel-host:", *clientTunnelHost)
-		fmt.Println("  tail:", clientCmd.Args())
-		client.Run(*serverTcpPort, *clientTunnelHost)
+		mmarClientConfig := client.ConfigOptions{
+			LocalPort:      *clientLocalPort,
+			TunnelHttpPort: *clientTunnelHttpPort,
+			TunnelTcpPort:  *clientTunnelTcpPort,
+			TunnelHost:     *clientTunnelHost,
+		}
+		client.Run(mmarClientConfig)
 	case constants.VERSION_CMD:
 		versionCmd.Parse(os.Args[2:])
 		fmt.Println("mmar version", constants.MMAR_VERSION)

@@ -27,6 +27,11 @@ import (
 
 var CLIENT_MAX_TUNNELS_REACHED = errors.New("Client reached max tunnels limit")
 
+type ConfigOptions struct {
+	HttpPort string
+	TcpPort  string
+}
+
 type MmarServer struct {
 	mu           sync.Mutex
 	clients      map[string]ClientTunnel
@@ -380,7 +385,7 @@ func (ms *MmarServer) processTunnelMessages(ct *ClientTunnel) {
 	}
 }
 
-func Run(tcpPort string, httpPort string) {
+func Run(config ConfigOptions) {
 	// Channel handler for interrupt signal
 	sigInt := make(chan os.Signal, 1)
 	signal.Notify(sigInt, os.Interrupt)
@@ -395,8 +400,8 @@ func Run(tcpPort string, httpPort string) {
 	mux.Handle("/", logger.LoggerMiddleware(&mmarServer))
 
 	go func() {
-		log.Print("Listening for TCP Requests...")
-		ln, err := net.Listen("tcp", fmt.Sprintf(":%s", tcpPort))
+		log.Printf("Listening for TCP Requests on %s...", config.TcpPort)
+		ln, err := net.Listen("tcp", fmt.Sprintf(":%s", config.TcpPort))
 		if err != nil {
 			log.Fatalf("Failed to start TCP server: %v", err)
 			return
@@ -411,8 +416,8 @@ func Run(tcpPort string, httpPort string) {
 	}()
 
 	go func() {
-		log.Print("Listening for HTTP Requests...")
-		if err := http.ListenAndServe(fmt.Sprintf(":%s", httpPort), mux); err != nil && err != http.ErrServerClosed {
+		log.Printf("Listening for HTTP Requests on %s...", config.HttpPort)
+		if err := http.ListenAndServe(fmt.Sprintf(":%s", config.HttpPort), mux); err != nil && err != http.ErrServerClosed {
 			fmt.Fprintf(os.Stderr, "Error listening and serving: %s\n", err)
 		}
 	}()

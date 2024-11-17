@@ -21,13 +21,21 @@ import (
 	"github.com/yusuf-musleh/mmar/internal/protocol"
 )
 
-// Tunnel to Server
-type ServerTunnel struct {
-	protocol.Tunnel
+type ConfigOptions struct {
+	LocalPort      string
+	TunnelHttpPort string
+	TunnelTcpPort  string
+	TunnelHost     string
 }
 
-func localizeRequest(request *http.Request) {
-	localhost := fmt.Sprintf("http://localhost:%v%v", constants.CLIENT_PORT, request.RequestURI)
+type MmarClient struct {
+	// Tunnel to Server
+	protocol.Tunnel
+	ConfigOptions
+}
+
+func (mc *MmarClient) localizeRequest(request *http.Request) {
+	localhost := fmt.Sprintf("http://localhost:%v%v", mc.LocalPort, request.RequestURI)
 	localURL, urlErr := url.Parse(localhost)
 	if urlErr != nil {
 		log.Fatalf("Failed to parse URL: %v", urlErr)
@@ -40,7 +48,7 @@ func localizeRequest(request *http.Request) {
 }
 
 // Process requests coming from mmar server and forward them to localhost
-func (st *ServerTunnel) handleRequestMessage(tunnelMsg protocol.TunnelMessage) {
+func (mc *MmarClient) handleRequestMessage(tunnelMsg protocol.TunnelMessage) {
 	fwdClient := &http.Client{}
 
 	reqReader := bufio.NewReader(bytes.NewReader(tunnelMsg.MsgData))
@@ -48,25 +56,25 @@ func (st *ServerTunnel) handleRequestMessage(tunnelMsg protocol.TunnelMessage) {
 
 	if reqErr != nil {
 		if errors.Is(reqErr, io.EOF) {
-			log.Print("Connection to mmar server closed or disconnected. Exiting...")
+			logger.Log(constants.DEFAULT_COLOR, "Connection to mmar server closed or disconnected. Exiting...")
 			os.Exit(0)
 		}
 
 		if errors.Is(reqErr, net.ErrClosed) {
-			log.Printf("Connection closed.")
+			logger.Log(constants.DEFAULT_COLOR, "Connection closed.")
 			os.Exit(0)
 		}
 		log.Fatalf("Failed to read data from TCP conn: %v", reqErr)
 	}
 
 	// Convert request to target localhost
-	localizeRequest(req)
+	mc.localizeRequest(req)
 
 	resp, fwdErr := fwdClient.Do(req)
 	if fwdErr != nil {
 		if errors.Is(fwdErr, syscall.ECONNREFUSED) {
 			localhostNotRunningMsg := protocol.TunnelMessage{MsgType: protocol.LOCALHOST_NOT_RUNNING}
-			if err := st.SendMessage(localhostNotRunningMsg); err != nil {
+			if err := mc.SendMessage(localhostNotRunningMsg); err != nil {
 				log.Fatal(err)
 			}
 			return
@@ -82,24 +90,24 @@ func (st *ServerTunnel) handleRequestMessage(tunnelMsg protocol.TunnelMessage) {
 	resp.Write(&responseBuff)
 
 	respMessage := protocol.TunnelMessage{MsgType: protocol.RESPONSE, MsgData: responseBuff.Bytes()}
-	if err := st.SendMessage(respMessage); err != nil {
+	if err := mc.SendMessage(respMessage); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func (st *ServerTunnel) ProcessTunnelMessages(ctx context.Context) {
+func (mc *MmarClient) ProcessTunnelMessages(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done(): // Client gracefully shutdown
 			return
 		default:
-			tunnelMsg, err := st.ReceiveMessage()
+			tunnelMsg, err := mc.ReceiveMessage()
 			if err != nil {
 				if errors.Is(err, io.EOF) {
-					log.Print("Tunnel connection closed from Server. Exiting...")
+					logger.Log(constants.DEFAULT_COLOR, "Tunnel connection closed from Server. Exiting...")
 					os.Exit(0)
 				} else if errors.Is(err, net.ErrClosed) {
-					log.Print("Tunnel connection disconnected from Server. Exiting...")
+					logger.Log(constants.DEFAULT_COLOR, "Tunnel connection disconnected from Server. Exiting...")
 					os.Exit(0)
 				}
 				log.Fatalf("Failed to receive message from server tunnel: %v", err)
@@ -107,47 +115,64 @@ func (st *ServerTunnel) ProcessTunnelMessages(ctx context.Context) {
 
 			switch tunnelMsg.MsgType {
 			case protocol.CLIENT_CONNECT:
-				// TODO: Show better log/message to user about how to access tunnel
-				log.Printf("Tunnel through: %v", string(tunnelMsg.MsgData))
+				logger.LogTunnelCreated(string(tunnelMsg.MsgData), mc.TunnelHost, mc.TunnelHttpPort, mc.LocalPort)
 			case protocol.CLIENT_TUNNEL_LIMIT:
-				log.Printf(
-					"Maximum number of Tunnels created limit reached (%v/%v). Please shutdown existing tunnels to create new ones.",
-					constants.MAX_TUNNELS_PER_IP,
-					constants.MAX_TUNNELS_PER_IP,
+				limit := logger.ColorLogStr(
+					constants.RED,
+					fmt.Sprintf("(%v/%v)", constants.MAX_TUNNELS_PER_IP, constants.MAX_TUNNELS_PER_IP),
 				)
+				logger.Log(
+					constants.DEFAULT_COLOR,
+					fmt.Sprintf(
+						"Maximum limit of Tunnels created reached %v. Please shutdown existing tunnels to create new ones.",
+						limit,
+					))
 				os.Exit(0)
 			case protocol.REQUEST:
-				go st.handleRequestMessage(tunnelMsg)
+				go mc.handleRequestMessage(tunnelMsg)
 			}
 		}
 	}
 }
 
-func Run(serverTcpPort string, tunnelHost string) {
+func Run(config ConfigOptions) {
+	logger.LogStartMmarClient(config.TunnelHost, config.TunnelTcpPort, config.TunnelHttpPort, config.LocalPort)
+
 	// Channel handler for interrupt signal
 	sigInt := make(chan os.Signal, 1)
 	signal.Notify(sigInt, os.Interrupt)
 
-	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%s", tunnelHost, serverTcpPort))
+	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%s", config.TunnelHost, config.TunnelTcpPort))
 	if err != nil {
-		log.Printf("Could not reach mmar server on: %s:%s \nExiting...", tunnelHost, serverTcpPort)
+		logger.Log(
+			constants.DEFAULT_COLOR,
+			fmt.Sprintf(
+				"Could not reach mmar server on %s:%s\n %v \nExiting...",
+				logger.ColorLogStr(constants.RED, config.TunnelHost),
+				logger.ColorLogStr(constants.RED, config.TunnelTcpPort),
+				err,
+			),
+		)
 		os.Exit(0)
 	}
 	defer conn.Close()
-	serverTunnel := ServerTunnel{protocol.Tunnel{Conn: conn}}
+	mmarClient := MmarClient{
+		protocol.Tunnel{Conn: conn},
+		config,
+	}
 
 	// Create context to cancel running gouroutines when shutting down
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Process Tunnel Messages coming from mmar server
-	go serverTunnel.ProcessTunnelMessages(ctx)
+	go mmarClient.ProcessTunnelMessages(ctx)
 
 	// Wait for an interrupt signal, if received, terminate gracefully
 	<-sigInt
 
-	log.Printf("Gracefully shutting down client...")
+	logger.Log(constants.YELLOW, "Gracefully shutting down client...")
 	disconnectMsg := protocol.TunnelMessage{MsgType: protocol.CLIENT_DISCONNECT}
-	serverTunnel.SendMessage(disconnectMsg)
+	mmarClient.SendMessage(disconnectMsg)
 	cancel()
 	gracefulShutdownTimer := time.NewTimer(constants.GRACEFUL_SHUTDOWN_TIMEOUT)
 	<-gracefulShutdownTimer.C

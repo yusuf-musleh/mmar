@@ -33,6 +33,14 @@ func ColorLogStr(color string, logstr string) string {
 	return color + logstr + constants.RESET
 }
 
+func Log(color string, logstr string) {
+	if color == constants.DEFAULT_COLOR {
+		log.Println(logstr)
+		return
+	}
+	log.Println(ColorLogStr(color, logstr))
+}
+
 // Log HTTP requests including their response's status code and response data length
 func LogHTTP(req *http.Request, statusCode int, contentLength int64, includeSubdomain bool, colored bool) {
 	hasQueryParams := ""
@@ -110,4 +118,42 @@ func LoggerMiddleware(h http.Handler) http.Handler {
 		h.ServeHTTP(&wrw, r)
 		LogHTTP(r, wrw.statusCode, wrw.contentLength, true, false)
 	})
+}
+
+func LogStartMmarClient(tunnelHost string, tunnelTcpPort string, tunnelHttpPort string, localPort string) {
+	logStr := `Starting %s...
+  Creating tunnel:
+    Tunnel Host: %s
+    Tunnel TCP Port: %s
+    Tunnel HTTP Port: %s
+    Local Port: %s
+
+`
+	log.Printf(
+		logStr,
+		ColorLogStr(constants.BLUE, "mmar client"),
+		ColorLogStr(constants.BLUE, tunnelHost),
+		ColorLogStr(constants.BLUE, tunnelTcpPort),
+		ColorLogStr(constants.BLUE, tunnelHttpPort),
+		ColorLogStr(constants.BLUE, localPort),
+	)
+}
+
+func LogTunnelCreated(subdomain string, tunnelHost string, tunnelHttpPort string, localPort string) {
+	logStr := `%s
+
+A mmar tunnel is now open on:
+
+>>>  http://%s.%s:%s %s http://localhost:%s
+
+`
+	log.Printf(
+		logStr,
+		ColorLogStr(constants.GREEN, "Tunnel created successfully!"),
+		subdomain,
+		tunnelHost,
+		tunnelHttpPort,
+		ColorLogStr(constants.GREEN, "->"),
+		localPort,
+	)
 }
