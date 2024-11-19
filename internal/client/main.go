@@ -96,6 +96,7 @@ func (mc *MmarClient) handleRequestMessage(tunnelMsg protocol.TunnelMessage) {
 }
 
 func (mc *MmarClient) ProcessTunnelMessages(ctx context.Context) {
+	// TODO: Needs to be refactored to pass in the ctx to recieveMessage to cancel the blocking
 	for {
 		select {
 		case <-ctx.Done(): // Client gracefully shutdown

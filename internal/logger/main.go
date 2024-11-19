@@ -120,6 +120,20 @@ func LoggerMiddleware(h http.Handler) http.Handler {
 	})
 }
 
+func LogStartMmarServer(tcpPort string, httpPort string) {
+	logStr := `Starting mmar server...
+  Starting HTTP Server on port: %s
+  Starting TCP Sever on port: %s
+
+`
+	log.Printf(
+		logStr,
+		httpPort,
+		tcpPort,
+	)
+
+}
+
 func LogStartMmarClient(tunnelHost string, tunnelTcpPort string, tunnelHttpPort string, localPort string) {
 	logStr := `Starting %s...
   Creating tunnel:

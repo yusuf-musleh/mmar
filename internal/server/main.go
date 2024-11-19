@@ -58,7 +58,14 @@ type ClientTunnel struct {
 }
 
 func (ct *ClientTunnel) close(graceful bool) {
-	log.Printf("Client disconnected: %v, closing tunnel...", ct.Conn.RemoteAddr().String())
+	logger.Log(
+		constants.DEFAULT_COLOR,
+		fmt.Sprintf(
+			"[%s] Client disconnected: %v, closing tunnel...",
+			ct.Tunnel.Id,
+			ct.Conn.RemoteAddr().String(),
+		),
+	)
 	// Close the TunneledRequests channel
 	close(ct.incomingChannel)
 	// Clear the TunneledRequests channel
@@ -75,7 +82,14 @@ func (ct *ClientTunnel) close(graceful bool) {
 	}
 
 	ct.Conn.Close()
-	log.Printf("Tunnel connection closed: %v", ct.Conn.RemoteAddr().String())
+	logger.Log(
+		constants.DEFAULT_COLOR,
+		fmt.Sprintf(
+			"[%s] Tunnel connection closed: %v",
+			ct.Tunnel.Id,
+			ct.Conn.RemoteAddr().String(),
+		),
+	)
 }
 
 // Serves simple stats for mmar server behind Basic Authentication
@@ -260,7 +274,6 @@ func (ms *MmarServer) newClientTunnel(conn net.Conn) (*ClientTunnel, error) {
 }
 
 func (ms *MmarServer) handleTcpConnection(conn net.Conn) {
-	log.Printf("TCP Conn from %s", conn.RemoteAddr().String())
 
 	clientTunnel, err := ms.newClientTunnel(conn)
 
@@ -272,6 +285,15 @@ func (ms *MmarServer) handleTcpConnection(conn net.Conn) {
 		}
 		log.Fatalf("Failed to create ClientTunnel: %v", err)
 	}
+
+	logger.Log(
+		constants.DEFAULT_COLOR,
+		fmt.Sprintf(
+			"[%s] Tunnel created: %s",
+			clientTunnel.Tunnel.Id,
+			conn.RemoteAddr().String(),
+		),
+	)
 
 	// Process Tunnel Messages coming from mmar client
 	go ms.processTunnelMessages(clientTunnel)
@@ -333,6 +355,7 @@ func (ms *MmarServer) processTunneledRequests(ct *ClientTunnel) {
 				ms.closeClientTunnel(ct)
 				return
 			}
+			// TODO: Needs to be cleaned up/refactored
 			failedReq := fmt.Sprintf("%s - %s%s", incomingReq.request.Method, html.EscapeString(incomingReq.request.URL.Path), incomingReq.request.URL.RawQuery)
 			log.Fatalf("Failed to return response: %v\n\n for req: %v", respErr, failedReq)
 		}
@@ -386,6 +409,8 @@ func (ms *MmarServer) processTunnelMessages(ct *ClientTunnel) {
 }
 
 func Run(config ConfigOptions) {
+	logger.LogStartMmarServer(config.TcpPort, config.HttpPort)
+
 	// Channel handler for interrupt signal
 	sigInt := make(chan os.Signal, 1)
 	signal.Notify(sigInt, os.Interrupt)
@@ -400,12 +425,19 @@ func Run(config ConfigOptions) {
 	mux.Handle("/", logger.LoggerMiddleware(&mmarServer))
 
 	go func() {
-		log.Printf("Listening for TCP Requests on %s...", config.TcpPort)
 		ln, err := net.Listen("tcp", fmt.Sprintf(":%s", config.TcpPort))
 		if err != nil {
 			log.Fatalf("Failed to start TCP server: %v", err)
 			return
 		}
+		logger.Log(
+			constants.DEFAULT_COLOR,
+			fmt.Sprintf(
+				"TCP Server started successfully!\nListening for TCP Connections on port %s...",
+				config.TcpPort,
+			),
+		)
+
 		for {
 			conn, err := ln.Accept()
 			if err != nil {
@@ -416,7 +448,13 @@ func Run(config ConfigOptions) {
 	}()
 
 	go func() {
-		log.Printf("Listening for HTTP Requests on %s...", config.HttpPort)
+		logger.Log(
+			constants.DEFAULT_COLOR,
+			fmt.Sprintf(
+				"HTTP Server started successfully!\nListening for HTTP Requests on %s...",
+				config.HttpPort,
+			),
+		)
 		if err := http.ListenAndServe(fmt.Sprintf(":%s", config.HttpPort), mux); err != nil && err != http.ErrServerClosed {
 			fmt.Fprintf(os.Stderr, "Error listening and serving: %s\n", err)
 		}
