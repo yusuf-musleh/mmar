@@ -33,8 +33,16 @@ func StartMmarServer(ctx context.Context) {
 	}
 }
 
-func StartMmarClient(ctx context.Context) {
-	cmd := exec.CommandContext(ctx, "./mmar", "client", "--tunnel-host", "localhost")
+func StartMmarClient(ctx context.Context, localDevServerPort string) {
+	cmd := exec.CommandContext(
+		ctx,
+		"./mmar",
+		"client",
+		"--tunnel-host",
+		"localhost",
+		"--local-port",
+		localDevServerPort,
+	)
 
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -51,22 +59,23 @@ func StartMmarClient(ctx context.Context) {
 	}
 }
 
-func StartLocalDevServer() {
+func StartLocalDevServer() *devserver.DevServer {
 	ds := devserver.NewDevServer()
-	fmt.Println(ds.Port())
-	defer ds.Close()
+	log.Printf("Started local dev server on: http://localhost:%v", ds.Port())
+	return ds
 }
 
 func TestSimulation(t *testing.T) {
 	simulationCtx, simulationCancel := context.WithCancel(context.Background())
 
-	go StartLocalDevServer()
+	localDevServer := StartLocalDevServer()
+	defer localDevServer.Close()
 
 	go StartMmarServer(simulationCtx)
 	wait := time.NewTimer(2 * time.Second)
 	<-wait.C
 	wait.Reset(2 * time.Second)
-	go StartMmarClient(simulationCtx)
+	go StartMmarClient(simulationCtx, localDevServer.Port())
 	<-wait.C
 
 	simulationCancel()
