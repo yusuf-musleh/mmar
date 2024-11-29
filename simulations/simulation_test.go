@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"testing"
 	"time"
+
+	"github.com/yusuf-musleh/mmar/simulations/devserver"
 )
 
 func StartMmarServer(ctx context.Context) {
@@ -49,8 +51,16 @@ func StartMmarClient(ctx context.Context) {
 	}
 }
 
+func StartLocalDevServer() {
+	ds := devserver.NewDevServer()
+	fmt.Println(ds.Port())
+	defer ds.Close()
+}
+
 func TestSimulation(t *testing.T) {
 	simulationCtx, simulationCancel := context.WithCancel(context.Background())
+
+	go StartLocalDevServer()
 
 	go StartMmarServer(simulationCtx)
 	wait := time.NewTimer(2 * time.Second)

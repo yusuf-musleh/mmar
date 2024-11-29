@@ -142,6 +142,7 @@ func (ms *MmarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if !clientExists {
 		// Create a response for Tunnel closed/not connected
+		// TODO: This is not right, need to get buff of full resp not just body
 		resp := protocol.TunnelErrStateResp(protocol.CLIENT_DISCONNECT)
 		w.WriteHeader(resp.StatusCode)
 		respBody, _ := io.ReadAll(resp.Body)
@@ -156,6 +157,7 @@ func (ms *MmarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// send back HTTP response right away
 	if clientTunnel.incomingChannel == nil {
 		// Create a response for Tunnel closed/not connected
+		// TODO: This is not right, need to get buff of full resp not just body
 		resp := protocol.TunnelErrStateResp(protocol.CLIENT_DISCONNECT)
 		w.WriteHeader(resp.StatusCode)
 		respBody, _ := io.ReadAll(resp.Body)
@@ -176,6 +178,7 @@ func (ms *MmarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	select {
 	case <-ctx.Done(): // Tunnel is closed if context is cancelled
 		// Create a response for Tunnel closed/not connected
+		// TODO: This is not right, need to get buff of full resp not just body
 		resp := protocol.TunnelErrStateResp(protocol.CLIENT_DISCONNECT)
 		w.WriteHeader(resp.StatusCode)
 		respBody, _ := io.ReadAll(resp.Body)
@@ -395,6 +398,7 @@ func (ms *MmarServer) processTunnelMessages(ct *ClientTunnel) {
 			ct.outgoingChannel <- tunnelMsg
 		case protocol.LOCALHOST_NOT_RUNNING:
 			// Create a response for Tunnel connected but localhost not running
+			// TODO: This is not right, need to get buff of full resp not just body
 			resp := protocol.TunnelErrStateResp(protocol.LOCALHOST_NOT_RUNNING)
 			// Writing response to buffer to tunnel it back
 			var responseBuff bytes.Buffer
