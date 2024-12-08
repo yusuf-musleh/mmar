@@ -1,9 +1,7 @@
 package devserver
 
 import (
-	"bytes"
 	"encoding/json"
-	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -52,20 +50,9 @@ func handleGet(w http.ResponseWriter, r *http.Request) {
 		log.Fatalf("Failed to marshal response for GET: %v", err)
 	}
 
-	resp := http.Response{
-		Status:        "200 OK",
-		StatusCode:    http.StatusOK,
-		Proto:         "HTTP/1.0",
-		ProtoMajor:    1,
-		ProtoMinor:    0,
-		Body:          io.NopCloser(bytes.NewBuffer(respBody)),
-		ContentLength: int64(len(respBody)),
-	}
-
-	w.WriteHeader(resp.StatusCode)
-	var buf bytes.Buffer
-	resp.Write(&buf)
-	w.Write(buf.Bytes())
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(respBody)
 }
 
 func handleGetFail(w http.ResponseWriter, r *http.Request) {
@@ -81,20 +68,9 @@ func handleGetFail(w http.ResponseWriter, r *http.Request) {
 		log.Fatalf("Failed to marshal response for GET: %v", err)
 	}
 
-	resp := http.Response{
-		Status:        "400 Bad Request",
-		StatusCode:    http.StatusBadRequest,
-		Proto:         "HTTP/1.0",
-		ProtoMajor:    1,
-		ProtoMinor:    0,
-		Body:          io.NopCloser(bytes.NewBuffer(respBody)),
-		ContentLength: int64(len(respBody)),
-	}
-
-	w.WriteHeader(resp.StatusCode)
-	var buf bytes.Buffer
-	resp.Write(&buf)
-	w.Write(buf.Bytes())
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	w.Write(respBody)
 }
 
 func handlePost(w http.ResponseWriter, r *http.Request) {
@@ -112,20 +88,9 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 		log.Fatalf("Failed to marshal response for POST: %v", err)
 	}
 
-	resp := http.Response{
-		Status:        "200 OK",
-		StatusCode:    http.StatusOK,
-		Proto:         "HTTP/1.0",
-		ProtoMajor:    1,
-		ProtoMinor:    0,
-		Body:          io.NopCloser(bytes.NewBuffer(respBody)),
-		ContentLength: int64(len(respBody)),
-	}
-
-	w.WriteHeader(resp.StatusCode)
-	var buf bytes.Buffer
-	resp.Write(&buf)
-	w.Write(buf.Bytes())
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(respBody)
 }
 
 func handlePostFail(w http.ResponseWriter, r *http.Request) {
@@ -141,18 +106,7 @@ func handlePostFail(w http.ResponseWriter, r *http.Request) {
 		log.Fatalf("Failed to marshal response for GET: %v", err)
 	}
 
-	resp := http.Response{
-		Status:        "400 Bad Request",
-		StatusCode:    http.StatusBadRequest,
-		Proto:         "HTTP/1.0",
-		ProtoMajor:    1,
-		ProtoMinor:    0,
-		Body:          io.NopCloser(bytes.NewBuffer(respBody)),
-		ContentLength: int64(len(respBody)),
-	}
-
-	w.WriteHeader(resp.StatusCode)
-	var buf bytes.Buffer
-	resp.Write(&buf)
-	w.Write(buf.Bytes())
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	w.Write(respBody)
 }
