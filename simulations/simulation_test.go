@@ -3,17 +3,20 @@ package simulations
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
-
 	"testing"
 	"time"
 
 	"github.com/yusuf-musleh/mmar/simulations/devserver"
+	"github.com/yusuf-musleh/mmar/simulations/dnsserver"
 )
 
 func StartMmarServer(ctx context.Context) {
@@ -96,29 +99,47 @@ func TestSimulation(t *testing.T) {
 	localDevServer := StartLocalDevServer()
 	defer localDevServer.Close()
 
+	go dnsserver.StartDnsServer()
+
 	go StartMmarServer(simulationCtx)
 	wait := time.NewTimer(2 * time.Second)
 	<-wait.C
-	wait.Reset(2 * time.Second)
+	wait.Reset(10 * time.Second)
 	clientUrlCh := make(chan string)
 	go StartMmarClient(simulationCtx, clientUrlCh, localDevServer.Port())
 
 	// Wait for tunnel url
 	tunnelUrl := <-clientUrlCh
-	fmt.Println("TunnelURL:", tunnelUrl, tunnelUrl+"/get")
 
-	// TODO: Figure out why requests through tunnel not working
-	client := &http.Client{}
+	// Adding custom resolver that points to our DNS Server
+	r := &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			return net.Dial("udp", dnsserver.LOCALHOST_DNS_SERVER)
+		},
+	}
+	dial := &net.Dialer{
+		Resolver: r,
+	}
+	tp := &http.Transport{
+		DialContext: dial.DialContext,
+	}
+	client := &http.Client{Transport: tp}
+
 	req, reqErr := http.NewRequest("GET", tunnelUrl+"/get", nil)
 	if reqErr != nil {
 		log.Fatalf("Failed to create new request: %v", reqErr)
 	}
+
 	resp, respErr := client.Do(req)
-	if reqErr != nil {
-		log.Fatalf("Failed to get response: %v", respErr)
+	if respErr != nil {
+		log.Printf("Failed to get response: %v", respErr)
 	}
 
-	fmt.Printf("resp is: %v", resp)
+	var respData map[string]interface{}
+	allBody, _ := io.ReadAll(resp.Body)
+	json.Unmarshal(allBody, &respData)
+	fmt.Println(respData)
 
 	<-wait.C
 	simulationCancel()
