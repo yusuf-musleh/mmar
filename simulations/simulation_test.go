@@ -6,12 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"testing"
 	"time"
 
@@ -70,7 +69,7 @@ func StartMmarClient(ctx context.Context, urlCh chan string, localDevServerPort 
 		line, readErr := stdoutReader.ReadString('\n')
 		for readErr == nil {
 			fmt.Print(line)
-			tunnelUrl := ExtractTunnelURL(line)
+			tunnelUrl := extractTunnelURL(line)
 			if tunnelUrl != "" {
 				urlCh <- tunnelUrl
 				break
@@ -93,6 +92,36 @@ func StartLocalDevServer() *devserver.DevServer {
 	return ds
 }
 
+// Test to verify successful GET request through mmar tunnel returned expected response
+func verifyGetRequestSuccess(t *testing.T, client *http.Client, tunnelUrl string) {
+	req, reqErr := http.NewRequest("GET", tunnelUrl+"/get", nil)
+	if reqErr != nil {
+		log.Fatalf("Failed to create new request: %v", reqErr)
+	}
+
+	resp, respErr := client.Do(req)
+	if respErr != nil {
+		log.Printf("Failed to get response: %v", respErr)
+	}
+
+	expectedBody := map[string]any{
+		"success": true,
+		"data":    "some data",
+	}
+	marshaledBody, _ := json.Marshal(expectedBody)
+
+	expectedResp := expectedResponse{
+		statusCode: http.StatusOK,
+		headers: map[string]string{
+			"Content-Length": strconv.Itoa(len(marshaledBody)),
+			"Content-Type":   "application/json",
+		},
+		body: expectedBody,
+	}
+
+	validateResponse(t, expectedResp, resp)
+}
+
 func TestSimulation(t *testing.T) {
 	simulationCtx, simulationCancel := context.WithCancel(context.Background())
 
@@ -104,44 +133,19 @@ func TestSimulation(t *testing.T) {
 	go StartMmarServer(simulationCtx)
 	wait := time.NewTimer(2 * time.Second)
 	<-wait.C
-	wait.Reset(10 * time.Second)
 	clientUrlCh := make(chan string)
 	go StartMmarClient(simulationCtx, clientUrlCh, localDevServer.Port())
 
 	// Wait for tunnel url
 	tunnelUrl := <-clientUrlCh
 
-	// Adding custom resolver that points to our DNS Server
-	r := &net.Resolver{
-		PreferGo: true,
-		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-			return net.Dial("udp", dnsserver.LOCALHOST_DNS_SERVER)
-		},
-	}
-	dial := &net.Dialer{
-		Resolver: r,
-	}
-	tp := &http.Transport{
-		DialContext: dial.DialContext,
-	}
-	client := &http.Client{Transport: tp}
+	// Initialize http client
+	client := httpClient()
 
-	req, reqErr := http.NewRequest("GET", tunnelUrl+"/get", nil)
-	if reqErr != nil {
-		log.Fatalf("Failed to create new request: %v", reqErr)
-	}
+	// Perform simulated usage tests
+	verifyGetRequestSuccess(t, client, tunnelUrl)
 
-	resp, respErr := client.Do(req)
-	if respErr != nil {
-		log.Printf("Failed to get response: %v", respErr)
-	}
-
-	var respData map[string]interface{}
-	allBody, _ := io.ReadAll(resp.Body)
-	json.Unmarshal(allBody, &respData)
-	fmt.Println(respData)
-
-	<-wait.C
+	// Stop simulation tests
 	simulationCancel()
 
 	wait.Reset(6 * time.Second)
