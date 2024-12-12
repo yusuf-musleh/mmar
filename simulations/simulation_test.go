@@ -94,7 +94,7 @@ func StartLocalDevServer() *devserver.DevServer {
 
 // Test to verify successful GET request through mmar tunnel returned expected response
 func verifyGetRequestSuccess(t *testing.T, client *http.Client, tunnelUrl string) {
-	req, reqErr := http.NewRequest("GET", tunnelUrl+"/get", nil)
+	req, reqErr := http.NewRequest("GET", tunnelUrl+devserver.GET_SUCCESS_URL, nil)
 	if reqErr != nil {
 		log.Fatalf("Failed to create new request: %v", reqErr)
 	}
@@ -104,7 +104,7 @@ func verifyGetRequestSuccess(t *testing.T, client *http.Client, tunnelUrl string
 		log.Printf("Failed to get response: %v", respErr)
 	}
 
-	expectedBody := map[string]any{
+	expectedBody := map[string]interface{}{
 		"success": true,
 		"data":    "some data",
 	}
@@ -112,6 +112,36 @@ func verifyGetRequestSuccess(t *testing.T, client *http.Client, tunnelUrl string
 
 	expectedResp := expectedResponse{
 		statusCode: http.StatusOK,
+		headers: map[string]string{
+			"Content-Length": strconv.Itoa(len(marshaledBody)),
+			"Content-Type":   "application/json",
+		},
+		body: expectedBody,
+	}
+
+	validateResponse(t, expectedResp, resp)
+}
+
+// Test to verify failed GET request through mmar tunnel returned expected response
+func verifyGetRequestFail(t *testing.T, client *http.Client, tunnelUrl string) {
+	req, reqErr := http.NewRequest("GET", tunnelUrl+devserver.GET_FAILURE_URL, nil)
+	if reqErr != nil {
+		log.Fatalf("Failed to create new request: %v", reqErr)
+	}
+
+	resp, respErr := client.Do(req)
+	if respErr != nil {
+		log.Printf("Failed to get response: %v", respErr)
+	}
+
+	expectedBody := map[string]interface{}{
+		"success": false,
+		"error":   "Sent bad GET request",
+	}
+	marshaledBody, _ := json.Marshal(expectedBody)
+
+	expectedResp := expectedResponse{
+		statusCode: http.StatusBadRequest,
 		headers: map[string]string{
 			"Content-Length": strconv.Itoa(len(marshaledBody)),
 			"Content-Type":   "application/json",
@@ -144,6 +174,7 @@ func TestSimulation(t *testing.T) {
 
 	// Perform simulated usage tests
 	verifyGetRequestSuccess(t, client, tunnelUrl)
+	verifyGetRequestFail(t, client, tunnelUrl)
 
 	// Stop simulation tests
 	simulationCancel()

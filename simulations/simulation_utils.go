@@ -3,7 +3,6 @@ package simulations
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -28,7 +27,6 @@ func validateResponse(t *testing.T, expectedResp expectedResponse, resp *http.Re
 	}
 
 	// Verify contains expected headers
-	fmt.Println("response header", resp.Header)
 	for hKey, hVal := range expectedResp.headers {
 		vals, ok := resp.Header[hKey]
 		if !ok || slices.Index(vals, hVal) == -1 {

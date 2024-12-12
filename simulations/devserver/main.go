@@ -8,6 +8,13 @@ import (
 	"strings"
 )
 
+const (
+	GET_SUCCESS_URL  = "/get"
+	GET_FAILURE_URL  = "/get-fail"
+	POST_SUCCESS_URL = "/post"
+	POST_FAILURE_URL = "/post-fail"
+)
+
 type DevServer struct {
 	*httptest.Server
 }
@@ -29,10 +36,10 @@ func (ds *DevServer) Port() string {
 func setupMux() *http.ServeMux {
 	mux := http.NewServeMux()
 
-	mux.Handle("/get", http.HandlerFunc(handleGet))
-	mux.Handle("/get-fail", http.HandlerFunc(handleGetFail))
-	mux.Handle("/post", http.HandlerFunc(handlePost))
-	mux.Handle("/post-fail", http.HandlerFunc(handlePostFail))
+	mux.Handle(GET_SUCCESS_URL, http.HandlerFunc(handleGet))
+	mux.Handle(GET_FAILURE_URL, http.HandlerFunc(handleGetFail))
+	mux.Handle(POST_SUCCESS_URL, http.HandlerFunc(handlePost))
+	mux.Handle(POST_FAILURE_URL, http.HandlerFunc(handlePostFail))
 
 	return mux
 }
