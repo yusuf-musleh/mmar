@@ -2,6 +2,7 @@ package simulations
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -152,6 +153,82 @@ func verifyGetRequestFail(t *testing.T, client *http.Client, tunnelUrl string) {
 	validateResponse(t, expectedResp, resp)
 }
 
+// Test to verify successful POST request through mmar tunnel returned expected response
+func verifyPostRequestSuccess(t *testing.T, client *http.Client, tunnelUrl string) {
+	reqBody, _ := json.Marshal(map[string]interface{}{
+		"success": true,
+		"payload": map[string]interface{}{
+			"some":     "data",
+			"moreData": 123,
+		},
+	})
+	req, reqErr := http.NewRequest("POST", tunnelUrl+devserver.POST_SUCCESS_URL, bytes.NewBuffer(reqBody))
+	if reqErr != nil {
+		log.Fatalf("Failed to create new request: %v", reqErr)
+	}
+
+	resp, respErr := client.Do(req)
+	if respErr != nil {
+		log.Printf("Failed to get response: %v", respErr)
+	}
+
+	expectedBody := map[string]interface{}{
+		"success": true,
+		"data": map[string]any{
+			"posted": "data",
+		},
+	}
+	marshaledBody, _ := json.Marshal(expectedBody)
+
+	expectedResp := expectedResponse{
+		statusCode: http.StatusOK,
+		headers: map[string]string{
+			"Content-Length": strconv.Itoa(len(marshaledBody)),
+			"Content-Type":   "application/json",
+		},
+		body: expectedBody,
+	}
+
+	validateResponse(t, expectedResp, resp)
+}
+
+// Test to verify failed POST request through mmar tunnel returned expected response
+func verifyPostRequestFail(t *testing.T, client *http.Client, tunnelUrl string) {
+	reqBody, _ := json.Marshal(map[string]interface{}{
+		"success": false,
+		"payload": map[string]interface{}{
+			"some":     "data",
+			"moreData": 123,
+		},
+	})
+	req, reqErr := http.NewRequest("POST", tunnelUrl+devserver.POST_FAILURE_URL, bytes.NewBuffer(reqBody))
+	if reqErr != nil {
+		log.Fatalf("Failed to create new request: %v", reqErr)
+	}
+
+	resp, respErr := client.Do(req)
+	if respErr != nil {
+		log.Printf("Failed to get response: %v", respErr)
+	}
+
+	expectedBody := map[string]interface{}{
+		"success": false,
+		"error":   "Sent bad POST request",
+	}
+	marshaledBody, _ := json.Marshal(expectedBody)
+
+	expectedResp := expectedResponse{
+		statusCode: http.StatusBadRequest,
+		headers: map[string]string{
+			"Content-Length": strconv.Itoa(len(marshaledBody)),
+			"Content-Type":   "application/json",
+		},
+		body: expectedBody,
+	}
+
+	validateResponse(t, expectedResp, resp)
+}
+
 func TestSimulation(t *testing.T) {
 	simulationCtx, simulationCancel := context.WithCancel(context.Background())
 
@@ -175,6 +252,8 @@ func TestSimulation(t *testing.T) {
 	// Perform simulated usage tests
 	verifyGetRequestSuccess(t, client, tunnelUrl)
 	verifyGetRequestFail(t, client, tunnelUrl)
+	verifyPostRequestSuccess(t, client, tunnelUrl)
+	verifyPostRequestFail(t, client, tunnelUrl)
 
 	// Stop simulation tests
 	simulationCancel()

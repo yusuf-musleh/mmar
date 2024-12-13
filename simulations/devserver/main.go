@@ -84,7 +84,7 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: Check and confirm contents of request (r) are what we expect
 
-	respBody, err := json.Marshal(map[string]any{
+	respBody, err := json.Marshal(map[string]interface{}{
 		"success": true,
 		"data": map[string]any{
 			"posted": "data",
