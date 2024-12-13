@@ -93,89 +93,127 @@ func StartLocalDevServer() *devserver.DevServer {
 	return ds
 }
 
-// Test to verify successful GET request through mmar tunnel returned expected response
+// Test to verify successful GET request through mmar tunnel returned expected request/response
 func verifyGetRequestSuccess(t *testing.T, client *http.Client, tunnelUrl string) {
 	req, reqErr := http.NewRequest("GET", tunnelUrl+devserver.GET_SUCCESS_URL, nil)
 	if reqErr != nil {
 		log.Fatalf("Failed to create new request: %v", reqErr)
 	}
+	// Adding custom header to confirm that they are propogated when going through mmar
+	req.Header.Set("Simulation-Test", "verify-get-request-success")
 
 	resp, respErr := client.Do(req)
 	if respErr != nil {
 		log.Printf("Failed to get response: %v", respErr)
+	}
+
+	expectedReqHeaders := map[string][]string{
+		"User-Agent":      {"Go-http-client/1.1"}, // Default header in golang client
+		"Accept-Encoding": {"gzip"},               // Default header in golang client
+		"Simulation-Test": {"verify-get-request-success"},
 	}
 
 	expectedBody := map[string]interface{}{
 		"success": true,
 		"data":    "some data",
+		"echo": map[string]interface{}{
+			"reqHeaders": expectedReqHeaders,
+		},
 	}
 	marshaledBody, _ := json.Marshal(expectedBody)
 
 	expectedResp := expectedResponse{
 		statusCode: http.StatusOK,
 		headers: map[string]string{
-			"Content-Length": strconv.Itoa(len(marshaledBody)),
-			"Content-Type":   "application/json",
+			"Content-Length":    strconv.Itoa(len(marshaledBody)),
+			"Content-Type":      "application/json",
+			"Simulation-Header": "devserver-handle-get",
 		},
 		body: expectedBody,
 	}
 
-	validateResponse(t, expectedResp, resp)
+	validateRequestResponse(t, expectedResp, resp, "verifyGetRequestSuccess")
 }
 
-// Test to verify failed GET request through mmar tunnel returned expected response
+// Test to verify failed GET request through mmar tunnel returned expected request/response
 func verifyGetRequestFail(t *testing.T, client *http.Client, tunnelUrl string) {
 	req, reqErr := http.NewRequest("GET", tunnelUrl+devserver.GET_FAILURE_URL, nil)
 	if reqErr != nil {
 		log.Fatalf("Failed to create new request: %v", reqErr)
 	}
+	// Adding custom header to confirm that they are propogated when going through mmar
+	req.Header.Set("Simulation-Test", "verify-get-request-fail")
 
 	resp, respErr := client.Do(req)
 	if respErr != nil {
 		log.Printf("Failed to get response: %v", respErr)
 	}
 
+	expectedReqHeaders := map[string][]string{
+		"User-Agent":      {"Go-http-client/1.1"}, // Default header in golang client
+		"Accept-Encoding": {"gzip"},               // Default header in golang client
+		"Simulation-Test": {"verify-get-request-fail"},
+	}
+
 	expectedBody := map[string]interface{}{
 		"success": false,
 		"error":   "Sent bad GET request",
+		"echo": map[string]interface{}{
+			"reqHeaders": expectedReqHeaders,
+		},
 	}
 	marshaledBody, _ := json.Marshal(expectedBody)
 
 	expectedResp := expectedResponse{
 		statusCode: http.StatusBadRequest,
 		headers: map[string]string{
-			"Content-Length": strconv.Itoa(len(marshaledBody)),
-			"Content-Type":   "application/json",
+			"Content-Length":    strconv.Itoa(len(marshaledBody)),
+			"Content-Type":      "application/json",
+			"Simulation-Header": "devserver-handle-get-fail",
 		},
 		body: expectedBody,
 	}
 
-	validateResponse(t, expectedResp, resp)
+	validateRequestResponse(t, expectedResp, resp, "verifyGetRequestFail")
 }
 
-// Test to verify successful POST request through mmar tunnel returned expected response
+// Test to verify successful POST request through mmar tunnel returned expected request/response
 func verifyPostRequestSuccess(t *testing.T, client *http.Client, tunnelUrl string) {
-	reqBody, _ := json.Marshal(map[string]interface{}{
+	reqBody := map[string]interface{}{
 		"success": true,
 		"payload": map[string]interface{}{
 			"some":     "data",
 			"moreData": 123,
 		},
-	})
-	req, reqErr := http.NewRequest("POST", tunnelUrl+devserver.POST_SUCCESS_URL, bytes.NewBuffer(reqBody))
+	}
+	serializedReqBody, _ := json.Marshal(reqBody)
+	req, reqErr := http.NewRequest("POST", tunnelUrl+devserver.POST_SUCCESS_URL, bytes.NewBuffer(serializedReqBody))
 	if reqErr != nil {
 		log.Fatalf("Failed to create new request: %v", reqErr)
 	}
+	// Adding custom header to confirm that they are propogated when going through mmar
+	req.Header.Set("Simulation-Test", "verify-post-request-success")
 
 	resp, respErr := client.Do(req)
 	if respErr != nil {
 		log.Printf("Failed to get response: %v", respErr)
 	}
 
+	expectedReqHeaders := map[string][]string{
+		"User-Agent":      {"Go-http-client/1.1"}, // Default header in golang client
+		"Accept-Encoding": {"gzip"},               // Default header in golang client
+		"Simulation-Test": {"verify-post-request-success"},
+		"Content-Length":  {strconv.Itoa(len(serializedReqBody))},
+	}
+
 	expectedBody := map[string]interface{}{
 		"success": true,
-		"data": map[string]any{
+		"data": map[string]interface{}{
 			"posted": "data",
+		},
+		"echo": map[string]interface{}{
+			"reqHeaders": expectedReqHeaders,
+			"reqBody":    reqBody,
 		},
 	}
 	marshaledBody, _ := json.Marshal(expectedBody)
@@ -183,50 +221,66 @@ func verifyPostRequestSuccess(t *testing.T, client *http.Client, tunnelUrl strin
 	expectedResp := expectedResponse{
 		statusCode: http.StatusOK,
 		headers: map[string]string{
-			"Content-Length": strconv.Itoa(len(marshaledBody)),
-			"Content-Type":   "application/json",
+			"Content-Length":    strconv.Itoa(len(marshaledBody)),
+			"Content-Type":      "application/json",
+			"Simulation-Header": "devserver-handle-post-success",
 		},
 		body: expectedBody,
 	}
 
-	validateResponse(t, expectedResp, resp)
+	validateRequestResponse(t, expectedResp, resp, "verifyPostRequestSuccess")
 }
 
-// Test to verify failed POST request through mmar tunnel returned expected response
+// Test to verify failed POST request through mmar tunnel returned expected request/response
 func verifyPostRequestFail(t *testing.T, client *http.Client, tunnelUrl string) {
-	reqBody, _ := json.Marshal(map[string]interface{}{
+	reqBody := map[string]interface{}{
 		"success": false,
 		"payload": map[string]interface{}{
 			"some":     "data",
 			"moreData": 123,
 		},
-	})
-	req, reqErr := http.NewRequest("POST", tunnelUrl+devserver.POST_FAILURE_URL, bytes.NewBuffer(reqBody))
+	}
+	serializedReqBody, _ := json.Marshal(reqBody)
+	req, reqErr := http.NewRequest("POST", tunnelUrl+devserver.POST_FAILURE_URL, bytes.NewBuffer(serializedReqBody))
 	if reqErr != nil {
 		log.Fatalf("Failed to create new request: %v", reqErr)
 	}
+	// Adding custom header to confirm that they are propogated when going through mmar
+	req.Header.Set("Simulation-Test", "verify-post-request-fail")
 
 	resp, respErr := client.Do(req)
 	if respErr != nil {
 		log.Printf("Failed to get response: %v", respErr)
 	}
 
+	expectedReqHeaders := map[string][]string{
+		"User-Agent":      {"Go-http-client/1.1"}, // Default header in golang client
+		"Accept-Encoding": {"gzip"},               // Default header in golang client
+		"Simulation-Test": {"verify-post-request-fail"},
+		"Content-Length":  {strconv.Itoa(len(serializedReqBody))},
+	}
+
 	expectedBody := map[string]interface{}{
 		"success": false,
 		"error":   "Sent bad POST request",
+		"echo": map[string]interface{}{
+			"reqHeaders": expectedReqHeaders,
+			"reqBody":    reqBody,
+		},
 	}
 	marshaledBody, _ := json.Marshal(expectedBody)
 
 	expectedResp := expectedResponse{
 		statusCode: http.StatusBadRequest,
 		headers: map[string]string{
-			"Content-Length": strconv.Itoa(len(marshaledBody)),
-			"Content-Type":   "application/json",
+			"Content-Length":    strconv.Itoa(len(marshaledBody)),
+			"Content-Type":      "application/json",
+			"Simulation-Header": "devserver-handle-post-fail",
 		},
 		body: expectedBody,
 	}
 
-	validateResponse(t, expectedResp, resp)
+	validateRequestResponse(t, expectedResp, resp, "verifyPostRequestFail")
 }
 
 func TestSimulation(t *testing.T) {

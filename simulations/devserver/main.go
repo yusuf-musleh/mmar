@@ -45,12 +45,13 @@ func setupMux() *http.ServeMux {
 }
 
 func handleGet(w http.ResponseWriter, r *http.Request) {
-
-	// TODO: Check and confirm contents of request (r) are what we expect
-
-	respBody, err := json.Marshal(map[string]any{
+	// Include echo of request headers in response to confirm they were received
+	respBody, err := json.Marshal(map[string]interface{}{
 		"success": true,
 		"data":    "some data",
+		"echo": map[string]interface{}{
+			"reqHeaders": r.Header,
+		},
 	})
 
 	if err != nil {
@@ -58,17 +59,21 @@ func handleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	// Add custom header to response to confirm to confirm that they
+	// propograte when going through mmar
+	w.Header().Set("Simulation-Header", "devserver-handle-get")
 	w.WriteHeader(http.StatusOK)
 	w.Write(respBody)
 }
 
 func handleGetFail(w http.ResponseWriter, r *http.Request) {
-
-	// TODO: Check and confirm contents of request (r) are what we expect
-
-	respBody, err := json.Marshal(map[string]any{
+	// Include echo of request headers in response to confirm they were received
+	respBody, err := json.Marshal(map[string]interface{}{
 		"success": false,
 		"error":   "Sent bad GET request",
+		"echo": map[string]interface{}{
+			"reqHeaders": r.Header,
+		},
 	})
 
 	if err != nil {
@@ -76,18 +81,30 @@ func handleGetFail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	// Add custom header to response to confirm to confirm that they
+	// propograte when going through mmar
+	w.Header().Set("Simulation-Header", "devserver-handle-get-fail")
 	w.WriteHeader(http.StatusBadRequest)
 	w.Write(respBody)
 }
 
 func handlePost(w http.ResponseWriter, r *http.Request) {
-
-	// TODO: Check and confirm contents of request (r) are what we expect
+	// Include echo of request headers/body in response to confirm they were received
+	var reqBody interface{}
+	jsonDecoder := json.NewDecoder(r.Body)
+	err := jsonDecoder.Decode(&reqBody)
+	if err != nil {
+		log.Fatal("Failed to decode request body to json", err)
+	}
 
 	respBody, err := json.Marshal(map[string]interface{}{
 		"success": true,
-		"data": map[string]any{
+		"data": map[string]interface{}{
 			"posted": "data",
+		},
+		"echo": map[string]interface{}{
+			"reqHeaders": r.Header,
+			"reqBody":    reqBody,
 		},
 	})
 
@@ -96,17 +113,29 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	// Add custom header to response to confirm to confirm that they
+	// propograte when going through mmar
+	w.Header().Set("Simulation-Header", "devserver-handle-post-success")
 	w.WriteHeader(http.StatusOK)
 	w.Write(respBody)
 }
 
 func handlePostFail(w http.ResponseWriter, r *http.Request) {
+	// Include echo of request headers/body in response to confirm they were received
+	var reqBody interface{}
+	jsonDecoder := json.NewDecoder(r.Body)
+	err := jsonDecoder.Decode(&reqBody)
+	if err != nil {
+		log.Fatal("Failed to decode request body to json", err)
+	}
 
-	// TODO: Check and confirm contents of request (r) are what we expect
-
-	respBody, err := json.Marshal(map[string]any{
+	respBody, err := json.Marshal(map[string]interface{}{
 		"success": false,
 		"error":   "Sent bad POST request",
+		"echo": map[string]interface{}{
+			"reqHeaders": r.Header,
+			"reqBody":    reqBody,
+		},
 	})
 
 	if err != nil {
@@ -114,6 +143,9 @@ func handlePostFail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	// Add custom header to response to confirm to confirm that they
+	// propograte when going through mmar
+	w.Header().Set("Simulation-Header", "devserver-handle-post-fail")
 	w.WriteHeader(http.StatusBadRequest)
 	w.Write(respBody)
 }

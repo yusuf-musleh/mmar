@@ -6,7 +6,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"reflect"
 	"regexp"
 	"slices"
 	"testing"
@@ -14,23 +13,28 @@ import (
 	"github.com/yusuf-musleh/mmar/simulations/dnsserver"
 )
 
+type receivedRequest struct {
+	headers map[string]string
+	body    map[string]interface{}
+}
+
 type expectedResponse struct {
 	statusCode int
 	headers    map[string]string
 	body       map[string]interface{}
 }
 
-func validateResponse(t *testing.T, expectedResp expectedResponse, resp *http.Response) {
+func validateRequestResponse(t *testing.T, expectedResp expectedResponse, resp *http.Response, testName string) {
 	// Verify expected status code returned
 	if resp.StatusCode != expectedResp.statusCode {
-		t.Errorf("verifyGetRequestSuccess: resp.statusCode = %v; want %v", resp.StatusCode, expectedResp.statusCode)
+		t.Errorf("%v: resp.statusCode = %v; want %v", testName, resp.StatusCode, expectedResp.statusCode)
 	}
 
 	// Verify contains expected headers
 	for hKey, hVal := range expectedResp.headers {
 		vals, ok := resp.Header[hKey]
 		if !ok || slices.Index(vals, hVal) == -1 {
-			t.Errorf("verifyGetRequestSuccess: resp.headers[%v] = %v; want %v", hKey, vals, hVal)
+			t.Errorf("%v: resp.headers[%v] = %v; want %v", testName, hKey, vals, hVal)
 		}
 	}
 
@@ -42,12 +46,10 @@ func validateResponse(t *testing.T, expectedResp expectedResponse, resp *http.Re
 		log.Fatal("Failed to read response body", err)
 	}
 
-	bodyEqual := reflect.DeepEqual(respBody, expectedResp.body)
-
-	if !bodyEqual {
-		expectedJson, _ := json.Marshal(expectedResp.body)
-		actualJson, _ := json.Marshal(respBody)
-		t.Errorf("verifyGetRequestSuccess = %v; want %v", string(actualJson), string(expectedJson))
+	expectedJson, _ := json.Marshal(expectedResp.body)
+	actualJson, _ := json.Marshal(respBody)
+	if string(actualJson) != string(expectedJson) {
+		t.Errorf("%v = %v; want %v", testName, string(actualJson), string(expectedJson))
 	}
 }
 
