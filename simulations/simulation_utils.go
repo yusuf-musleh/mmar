@@ -1,8 +1,13 @@
 package simulations
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -49,7 +54,7 @@ func validateRequestResponse(t *testing.T, expectedResp expectedResponse, resp *
 	expectedJson, _ := json.Marshal(expectedResp.body)
 	actualJson, _ := json.Marshal(respBody)
 	if string(actualJson) != string(expectedJson) {
-		t.Errorf("%v = %v; want %v", testName, string(actualJson), string(expectedJson))
+		t.Errorf("%v: body = %v; want %v", testName, string(actualJson), string(expectedJson))
 	}
 }
 
@@ -58,7 +63,7 @@ func extractTunnelURL(clientStdout string) string {
 	return re.FindString(clientStdout)
 }
 
-func httpClient() *http.Client {
+func initCustomDialer() *net.Dialer {
 	// Adding custom resolver that points to our simulated DNS Server to
 	// handle subdomain on localhost
 	r := &net.Resolver{
@@ -70,9 +75,66 @@ func httpClient() *http.Client {
 	dial := &net.Dialer{
 		Resolver: r,
 	}
+	return dial
+}
+
+func httpClient() *http.Client {
+	dialer := initCustomDialer()
+
 	tp := &http.Transport{
-		DialContext: dial.DialContext,
+		DialContext: dialer.DialContext,
 	}
 	client := &http.Client{Transport: tp}
 	return client
+}
+
+// This is used when we want more control over creating HTTP requests
+// mainly allowing us to create invalid ones
+func manualHttpRequest(url string, rawHttpReq string) net.Conn {
+	dialer := initCustomDialer()
+
+	conn, err := dialer.Dial("tcp", url)
+	if err != nil {
+		log.Fatal("Failed to connect to server", err)
+	}
+
+	_, writeErr := fmt.Fprint(conn, rawHttpReq)
+	if writeErr != nil {
+		log.Fatal("Failed to write to connection", writeErr)
+	}
+
+	return conn
+}
+
+// This is used when reading responses of manually performed HTTP requests
+func manualReadResponse(conn net.Conn) (*http.Response, error) {
+	defer conn.Close()
+	bufferSize := 2048
+	buf := make([]byte, bufferSize)
+	respBytes := []byte{}
+
+	// Keep reading response until completely read
+	for {
+		r, readErr := conn.Read(buf)
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				break
+			}
+			return nil, readErr
+		}
+		respBytes = append(respBytes, buf[:r]...)
+		if r < bufferSize {
+			break
+		}
+	}
+
+	// Convert response bytes to http.Response
+	respBuff := bytes.NewBuffer(respBytes)
+	reader := bufio.NewReader(respBuff)
+	resp, respErr := http.ReadResponse(reader, nil)
+	if respErr != nil {
+		log.Fatal("failed to parse response", respErr)
+	}
+
+	return resp, nil
 }

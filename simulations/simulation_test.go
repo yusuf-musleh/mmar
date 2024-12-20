@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -283,6 +285,139 @@ func verifyPostRequestFail(t *testing.T, client *http.Client, tunnelUrl string) 
 	validateRequestResponse(t, expectedResp, resp, "verifyPostRequestFail")
 }
 
+// Test to verify a HTTP request with an invalid method is handled
+func verifyInvalidMethodRequestHandled(t *testing.T, client *http.Client, tunnelUrl string) {
+	url, urlErr := url.Parse(tunnelUrl + devserver.GET_SUCCESS_URL)
+	if urlErr != nil {
+		log.Fatal("Failed to create url", urlErr)
+	}
+
+	req := &http.Request{
+		Method: "INVALID_METHOD",
+		URL:    url,
+		Header: make(http.Header),
+	}
+	// Adding custom header to confirm that they are propogated when going through mmar
+	req.Header.Set("Simulation-Test", "verify-invalid-method-request")
+
+	resp, respErr := client.Do(req)
+	if respErr != nil {
+		t.Errorf("Failed to get response %v", respErr)
+	}
+
+	// Using the same validation for "verifyGetRequestSuccess" since we are
+	// hitting the same endpoint
+	expectedReqHeaders := map[string][]string{
+		"User-Agent":      {"Go-http-client/1.1"}, // Default header in golang client
+		"Accept-Encoding": {"gzip"},               // Default header in golang client
+		"Simulation-Test": {"verify-invalid-method-request"},
+	}
+
+	expectedBody := map[string]interface{}{
+		"success": true,
+		"data":    "some data",
+		"echo": map[string]interface{}{
+			"reqHeaders": expectedReqHeaders,
+		},
+	}
+	marshaledBody, _ := json.Marshal(expectedBody)
+
+	expectedResp := expectedResponse{
+		statusCode: http.StatusOK,
+		headers: map[string]string{
+			"Content-Length":    strconv.Itoa(len(marshaledBody)),
+			"Content-Type":      "application/json",
+			"Simulation-Header": "devserver-handle-get",
+		},
+		body: expectedBody,
+	}
+
+	validateRequestResponse(t, expectedResp, resp, "verifyInvalidMethodRequestHandled")
+}
+
+// Test to verify a HTTP request with invalid headers is handled
+func verifyInvalidHeadersRequestHandled(t *testing.T, tunnelUrl string) {
+	dialUrl := strings.Replace(tunnelUrl, "http://", "", 1)
+
+	// Write a raw HTTP request with an invalid header
+	req := "GET / HTTP/1.1\r\n" +
+		"Host: " + dialUrl + "\r\n" +
+		":Invalid-Header: :value\r\n" + // Header that starts with a colon (invalid)
+		"\r\n"
+
+	// Manually perform request and read response
+	conn := manualHttpRequest(dialUrl, req)
+	resp, respErr := manualReadResponse(conn)
+
+	if respErr != nil {
+		t.Errorf("%v: Failed to get response %v", "verifyInvalidHeadersRequestHandled", respErr)
+	}
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf(
+			"%v: resp.StatusCode = %v; want %v",
+			"verifyInvalidHeadersRequestHandled",
+			resp.StatusCode,
+			http.StatusBadRequest,
+		)
+	}
+}
+
+// Test to verify a HTTP request with invalid protocol version is handled
+func verifyInvalidHttpVersionRequestHandled(t *testing.T, tunnelUrl string) {
+	dialUrl := strings.Replace(tunnelUrl, "http://", "", 1)
+
+	// Write a raw HTTP request with an invalid HTTP version
+	req := "GET / HTTP/2.0.1\r\n" + // Invalid HTTP version
+		"Host: " + dialUrl + "\r\n" +
+		"\r\n"
+
+	// Manually perform request and read response
+	conn := manualHttpRequest(dialUrl, req)
+	resp, respErr := manualReadResponse(conn)
+
+	if respErr != nil {
+		t.Errorf("%v: Failed to get response %v", "verifyInvalidHttpVersionRequestHandled", respErr)
+	}
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf(
+			"%v: resp.StatusCode = %v; want %v",
+			"verifyInvalidHttpVersionRequestHandled",
+			resp.StatusCode,
+			http.StatusBadRequest,
+		)
+	}
+}
+
+// Test to verify a HTTP request with a invalid Content-Length header
+func verifyInvalidContentLengthRequestHandled(t *testing.T, tunnelUrl string) {
+	dialUrl := strings.Replace(tunnelUrl, "http://", "", 1)
+
+	// Write a raw HTTP request with an invalid Content-Length header
+	req := "GET / HTTP/1.1\r\n" +
+		"Host: " + dialUrl + "\r\n" +
+		"Content-Length: abc" + "\r\n" + // Invalid Content-Length header
+		"\r\n"
+
+	// Manually perform request and read response for invalid Content-Length
+	conn := manualHttpRequest(dialUrl, req)
+	resp, respErr := manualReadResponse(conn)
+
+	if respErr != nil {
+		t.Errorf("%v: Failed to get response %v", "verifyInvalidContentLengthRequestHandled", respErr)
+	}
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf(
+			"%v: resp.StatusCode = %v; want %v",
+			"verifyInvalidContentLengthRequestHandled",
+			resp.StatusCode,
+			http.StatusBadRequest,
+		)
+	}
+}
+
 func TestSimulation(t *testing.T) {
 	simulationCtx, simulationCancel := context.WithCancel(context.Background())
 
@@ -308,6 +443,12 @@ func TestSimulation(t *testing.T) {
 	verifyGetRequestFail(t, client, tunnelUrl)
 	verifyPostRequestSuccess(t, client, tunnelUrl)
 	verifyPostRequestFail(t, client, tunnelUrl)
+
+	// Perform Invalid HTTP requests to test durability of mmar
+	verifyInvalidMethodRequestHandled(t, client, tunnelUrl)
+	verifyInvalidHeadersRequestHandled(t, tunnelUrl)
+	verifyInvalidHttpVersionRequestHandled(t, tunnelUrl)
+	verifyInvalidContentLengthRequestHandled(t, tunnelUrl)
 
 	// Stop simulation tests
 	simulationCancel()
