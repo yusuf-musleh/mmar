@@ -43,6 +43,7 @@ type IncomingRequest struct {
 	responseWriter  http.ResponseWriter
 	request         *http.Request
 	cancel          context.CancelFunc
+	cancelChannel   chan bool
 }
 
 type OutgoingResponse struct {
@@ -57,6 +58,35 @@ type ClientTunnel struct {
 	outgoingChannel chan protocol.TunnelMessage
 }
 
+func (ct *ClientTunnel) drainChannels() {
+	// Drain all incoming requests to tunnel and cancel them
+incomingDrainerLoop:
+	for {
+		select {
+		case incoming, _ := <-ct.incomingChannel:
+			// Cancel incoming requests
+			incoming.cancel()
+		default:
+			// Close the TunneledRequests channel
+			close(ct.incomingChannel)
+			break incomingDrainerLoop
+		}
+	}
+
+	// Draining all outgoing requests from tunnel
+OutgoingDrainerLoop:
+	for {
+		select {
+		case <-ct.outgoingChannel:
+			// Just draining, do nothing
+		default:
+			// Close the TunneledResponses channel
+			close(ct.outgoingChannel)
+			break OutgoingDrainerLoop
+		}
+	}
+}
+
 func (ct *ClientTunnel) close(graceful bool) {
 	logger.Log(
 		constants.DEFAULT_COLOR,
@@ -66,14 +96,9 @@ func (ct *ClientTunnel) close(graceful bool) {
 			ct.Conn.RemoteAddr().String(),
 		),
 	)
-	// Close the TunneledRequests channel
-	close(ct.incomingChannel)
-	// Clear the TunneledRequests channel
-	ct.incomingChannel = nil
-	// Close the TunneledResponses channel
-	close(ct.outgoingChannel)
-	// Clear the TunneledResponses channel
-	ct.outgoingChannel = nil
+
+	// Drain channels before closing them to prevent panics if there are blocked writes
+	ct.drainChannels()
 
 	if graceful {
 		// Wait a little for final response to complete, then close the connection
@@ -141,29 +166,13 @@ func (ms *MmarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	clientTunnel, clientExists := ms.clients[subdomain]
 
 	if !clientExists {
-		// Create a response for Tunnel closed/not connected
-		// TODO: This is not right, need to get buff of full resp not just body
-		resp := protocol.TunnelErrStateResp(protocol.CLIENT_DISCONNECT)
-		w.WriteHeader(resp.StatusCode)
-		respBody, _ := io.ReadAll(resp.Body)
-		w.Write(respBody)
+		protocol.RespondTunnelErr(protocol.CLIENT_DISCONNECT, w)
 		return
 	}
 
 	// Create response channel for tunneled request
 	respChannel := make(chan OutgoingResponse)
-
-	// Check if the tunnel was closed, if so,
-	// send back HTTP response right away
-	if clientTunnel.incomingChannel == nil {
-		// Create a response for Tunnel closed/not connected
-		// TODO: This is not right, need to get buff of full resp not just body
-		resp := protocol.TunnelErrStateResp(protocol.CLIENT_DISCONNECT)
-		w.WriteHeader(resp.StatusCode)
-		respBody, _ := io.ReadAll(resp.Body)
-		w.Write(respBody)
-		return
-	}
+	cancelChannel := make(chan bool)
 
 	ctx, cancel := context.WithCancel(r.Context())
 
@@ -173,16 +182,16 @@ func (ms *MmarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		responseWriter:  w,
 		request:         r,
 		cancel:          cancel,
+		cancelChannel:   cancelChannel,
 	}
 
+	// Add header to close the connection
+	w.Header().Set("Connection", "close")
+
 	select {
-	case <-ctx.Done(): // Tunnel is closed if context is cancelled
-		// Create a response for Tunnel closed/not connected
-		// TODO: This is not right, need to get buff of full resp not just body
-		resp := protocol.TunnelErrStateResp(protocol.CLIENT_DISCONNECT)
-		w.WriteHeader(resp.StatusCode)
-		respBody, _ := io.ReadAll(resp.Body)
-		w.Write(respBody)
+	case <-ctx.Done(): // Request is cancelled or Tunnel is closed if context is cancelled
+		close(cancelChannel)
+		protocol.RespondTunnelErr(protocol.CLIENT_DISCONNECT, w)
 		return
 	case resp, _ := <-respChannel: // Await response for tunneled request
 		// Write response headers with response status code to original client
@@ -332,11 +341,21 @@ func (ms *MmarServer) processTunneledRequestsForClient(ct *ClientTunnel) {
 		}
 
 		// Writing request to buffer to forward it
-		var requestBuff bytes.Buffer
-		incomingReq.request.Write(&requestBuff)
+		serializedReq, serializeErr := serializeRequest(incomingReq.request)
+		if serializeErr != nil {
+			select {
+			case <-incomingReq.cancelChannel:
+				// Request cancelled
+			case incomingReq.responseChannel <- OutgoingResponse{
+				statusCode: http.StatusBadRequest,
+				body:       []byte("Invalid HTTP Request."),
+			}:
+				// Response data sent, do nothing.
+			}
+		}
 
 		// Forward the request to mmar client
-		reqMessage := protocol.TunnelMessage{MsgType: protocol.REQUEST, MsgData: requestBuff.Bytes()}
+		reqMessage := protocol.TunnelMessage{MsgType: protocol.REQUEST, MsgData: serializedReq}
 		if err := ct.SendMessage(reqMessage); err != nil {
 			log.Fatal(err)
 		}
@@ -378,8 +397,12 @@ func (ms *MmarServer) processTunneledRequestsForClient(ct *ClientTunnel) {
 			}
 		}
 
-		// Send response back to goroutine handling the request
-		incomingReq.responseChannel <- OutgoingResponse{statusCode: resp.StatusCode, body: respBody}
+		select {
+		case <-incomingReq.cancelChannel:
+			// Request cancelled
+		case incomingReq.responseChannel <- OutgoingResponse{statusCode: resp.StatusCode, body: respBody}:
+			// Response data sent, do nothing.
+		}
 
 		// Close response body
 		resp.Body.Close()
@@ -398,8 +421,13 @@ func (ms *MmarServer) processTunnelMessages(ct *ClientTunnel) {
 			ct.outgoingChannel <- tunnelMsg
 		case protocol.LOCALHOST_NOT_RUNNING:
 			// Create a response for Tunnel connected but localhost not running
-			// TODO: This is not right, need to get buff of full resp not just body
-			resp := protocol.TunnelErrStateResp(protocol.LOCALHOST_NOT_RUNNING)
+			errState := protocol.TunnelErrState(protocol.LOCALHOST_NOT_RUNNING)
+			resp := http.Response{
+				Status:     "200 OK",
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBufferString(errState)),
+			}
+
 			// Writing response to buffer to tunnel it back
 			var responseBuff bytes.Buffer
 			resp.Write(&responseBuff)

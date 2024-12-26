@@ -39,23 +39,28 @@ func isValidTunnelMessageType(mt uint8) (uint8, error) {
 	return 0, INVALID_MESSAGE_TYPE
 }
 
-func TunnelErrStateResp(errState uint8) http.Response {
+func TunnelErrState(errState uint8) string {
 	// TODO: Have nicer/more elaborative error messages/pages
 	errStates := map[uint8]string{
 		CLIENT_DISCONNECT:     "Tunnel is closed, cannot connect to mmar client.",
 		LOCALHOST_NOT_RUNNING: "Tunneled successfully, but nothing is running on localhost.",
 	}
-	errBody := errStates[errState]
-	resp := http.Response{
-		Status:        "200 OK",
-		StatusCode:    http.StatusOK,
-		Proto:         "HTTP/1.0",
-		ProtoMajor:    1,
-		ProtoMinor:    0,
-		Body:          io.NopCloser(bytes.NewBufferString(errBody)),
-		ContentLength: int64(len(errBody)),
+	fallbackErr := "An error occured while attempting to tunnel."
+
+	tunnelErr, ok := errStates[errState]
+	if !ok {
+		tunnelErr = fallbackErr
 	}
-	return resp
+	return tunnelErr
+}
+
+func RespondTunnelErr(errState uint8, w http.ResponseWriter) {
+	errBody := TunnelErrState(errState)
+
+	w.Header().Set("Content-Length", strconv.Itoa(len(errBody)))
+	w.Header().Set("Connection", "close")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(errBody))
 }
 
 type Tunnel struct {

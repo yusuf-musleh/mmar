@@ -418,6 +418,64 @@ func verifyInvalidContentLengthRequestHandled(t *testing.T, tunnelUrl string) {
 	}
 }
 
+// Test to verify a HTTP request with a mismatched Content-Length header
+func verifyMismatchedContentLengthRequestHandled(t *testing.T, tunnelUrl string) {
+	dialUrl := strings.Replace(tunnelUrl, "http://", "", 1)
+
+	serializedBody := "{\"message\": \"Hello\"}\r\n"
+
+	// Write a raw HTTP request with an invalid Content-Length header
+	req := "POST /post HTTP/1.1\r\n" +
+		"Host: " + dialUrl + "\r\n" +
+		"Content-Length: 25\r\n" + // Mismatched Content-Length header, should be 20
+		"Simulation-Test: verify-mismatched-content-length-request-handled\r\n" +
+		"\r\n" +
+		serializedBody
+
+	// Manually perform request and read response for mismatched contentn-length
+	conn := manualHttpRequest(dialUrl, req)
+	resp, respErr := manualReadResponse(conn)
+
+	if respErr != nil {
+		t.Errorf("%v: Failed to get response %v", "verifyMismatchedContentLengthRequestHandled", respErr)
+	}
+
+	expectedReqHeaders := map[string][]string{
+		"User-Agent":      {"Go-http-client/1.1"}, // Default header in golang client
+		"Accept-Encoding": {"gzip"},               // Default header in golang client
+		"Simulation-Test": {"verify-mismatched-content-length-request-handled"},
+		"Content-Length":  {strconv.Itoa(len(serializedBody))},
+	}
+
+	expectedReqBody := map[string]interface{}{
+		"message": "Hello",
+	}
+
+	expectedBody := map[string]interface{}{
+		"success": true,
+		"data": map[string]interface{}{
+			"posted": "data",
+		},
+		"echo": map[string]interface{}{
+			"reqHeaders": expectedReqHeaders,
+			"reqBody":    expectedReqBody,
+		},
+	}
+	marshaledBody, _ := json.Marshal(expectedBody)
+
+	expectedResp := expectedResponse{
+		statusCode: http.StatusOK,
+		headers: map[string]string{
+			"Content-Length":    strconv.Itoa(len(marshaledBody)),
+			"Content-Type":      "application/json",
+			"Simulation-Header": "devserver-handle-post-success",
+		},
+		body: expectedBody,
+	}
+
+	validateRequestResponse(t, expectedResp, resp, "verifyMismatchedContentLengthRequestHandled")
+}
+
 func TestSimulation(t *testing.T) {
 	simulationCtx, simulationCancel := context.WithCancel(context.Background())
 
@@ -449,6 +507,7 @@ func TestSimulation(t *testing.T) {
 	verifyInvalidHeadersRequestHandled(t, tunnelUrl)
 	verifyInvalidHttpVersionRequestHandled(t, tunnelUrl)
 	verifyInvalidContentLengthRequestHandled(t, tunnelUrl)
+	verifyMismatchedContentLengthRequestHandled(t, tunnelUrl)
 
 	// Stop simulation tests
 	simulationCancel()

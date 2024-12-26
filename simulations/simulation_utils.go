@@ -118,6 +118,7 @@ func manualReadResponse(conn net.Conn) (*http.Response, error) {
 		r, readErr := conn.Read(buf)
 		if readErr != nil {
 			if errors.Is(readErr, io.EOF) {
+				respBytes = append(respBytes, buf[:r]...)
 				break
 			}
 			return nil, readErr

@@ -72,7 +72,7 @@ func (mc *MmarClient) handleRequestMessage(tunnelMsg protocol.TunnelMessage) {
 
 	resp, fwdErr := fwdClient.Do(req)
 	if fwdErr != nil {
-		if errors.Is(fwdErr, syscall.ECONNREFUSED) {
+		if errors.Is(fwdErr, syscall.ECONNREFUSED) || errors.Is(fwdErr, io.ErrUnexpectedEOF) {
 			localhostNotRunningMsg := protocol.TunnelMessage{MsgType: protocol.LOCALHOST_NOT_RUNNING}
 			if err := mc.SendMessage(localhostNotRunningMsg); err != nil {
 				log.Fatal(err)
