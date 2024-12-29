@@ -42,8 +42,8 @@ func isValidTunnelMessageType(mt uint8) (uint8, error) {
 func TunnelErrState(errState uint8) string {
 	// TODO: Have nicer/more elaborative error messages/pages
 	errStates := map[uint8]string{
-		CLIENT_DISCONNECT:     "Tunnel is closed, cannot connect to mmar client.",
-		LOCALHOST_NOT_RUNNING: "Tunneled successfully, but nothing is running on localhost.",
+		CLIENT_DISCONNECT:     constants.CLIENT_DISCONNECT_ERR_TEXT,
+		LOCALHOST_NOT_RUNNING: constants.LOCALHOST_NOT_RUNNING_ERR_TEXT,
 	}
 	fallbackErr := "An error occured while attempting to tunnel."
 

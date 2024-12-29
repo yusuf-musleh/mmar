@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -17,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yusuf-musleh/mmar/constants"
 	"github.com/yusuf-musleh/mmar/simulations/devserver"
 	"github.com/yusuf-musleh/mmar/simulations/dnsserver"
 )
@@ -432,7 +434,7 @@ func verifyMismatchedContentLengthRequestHandled(t *testing.T, tunnelUrl string)
 		"\r\n" +
 		serializedBody
 
-	// Manually perform request and read response for mismatched contentn-length
+	// Manually perform request and read response for mismatched content-length
 	conn := manualHttpRequest(dialUrl, req)
 	resp, respErr := manualReadResponse(conn)
 
@@ -476,6 +478,52 @@ func verifyMismatchedContentLengthRequestHandled(t *testing.T, tunnelUrl string)
 	validateRequestResponse(t, expectedResp, resp, "verifyMismatchedContentLengthRequestHandled")
 }
 
+// Test to verify a HTTP request with a Content-Length header but no body
+func verifyContentLengthWithNoBodyRequestHandled(t *testing.T, tunnelUrl string) {
+	dialUrl := strings.Replace(tunnelUrl, "http://", "", 1)
+
+	// Write a raw HTTP request with Content-Length header but no body
+	req := "POST /post HTTP/1.1\r\n" +
+		"Host: " + dialUrl + "\r\n" +
+		"Content-Length: 25\r\n" + // Content-Length header provided but no body
+		"Simulation-Test: verify-content-length-with-no-body-request-handled\r\n" +
+		"\r\n"
+
+	// Manually perform request and read response
+	conn := manualHttpRequest(dialUrl, req)
+	resp, respErr := manualReadResponse(conn)
+
+	if respErr != nil {
+		t.Errorf("%v: Failed to get response %v", "verifyContentLengthWithNoBodyRequestHandled", respErr)
+	}
+
+	if resp.StatusCode != http.StatusRequestTimeout {
+		t.Errorf(
+			"%v: resp.StatusCode = %v; want %v",
+			"verifyContentLengthWithNoBodyRequestHandled",
+			resp.StatusCode,
+			http.StatusRequestTimeout,
+		)
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Errorf(
+			"%v: Failed to read response body",
+			"verifyContentLengthWithNoBodyRequestHandled",
+		)
+	}
+
+	if string(respBody) != constants.READ_BODY_CHUNK_TIMEOUT_ERR_TEXT {
+		t.Errorf(
+			"%v: resp.Body = %v; want %v",
+			"verifyContentLengthWithNoBodyRequestHandled",
+			string(respBody),
+			constants.READ_BODY_CHUNK_TIMEOUT_ERR_TEXT,
+		)
+	}
+}
+
 func TestSimulation(t *testing.T) {
 	simulationCtx, simulationCancel := context.WithCancel(context.Background())
 
@@ -508,6 +556,7 @@ func TestSimulation(t *testing.T) {
 	verifyInvalidHttpVersionRequestHandled(t, tunnelUrl)
 	verifyInvalidContentLengthRequestHandled(t, tunnelUrl)
 	verifyMismatchedContentLengthRequestHandled(t, tunnelUrl)
+	verifyContentLengthWithNoBodyRequestHandled(t, tunnelUrl)
 
 	// Stop simulation tests
 	simulationCancel()

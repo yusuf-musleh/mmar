@@ -42,7 +42,8 @@ type IncomingRequest struct {
 	responseChannel chan OutgoingResponse
 	responseWriter  http.ResponseWriter
 	request         *http.Request
-	cancel          context.CancelFunc
+	ctx             context.Context
+	cancel          context.CancelCauseFunc
 	cancelChannel   chan bool
 }
 
@@ -65,7 +66,7 @@ incomingDrainerLoop:
 		select {
 		case incoming, _ := <-ct.incomingChannel:
 			// Cancel incoming requests
-			incoming.cancel()
+			incoming.cancel(CLIENT_DISCONNECTED_ERR)
 		default:
 			// Close the TunneledRequests channel
 			close(ct.incomingChannel)
@@ -174,26 +175,27 @@ func (ms *MmarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	respChannel := make(chan OutgoingResponse)
 	cancelChannel := make(chan bool)
 
-	ctx, cancel := context.WithCancel(r.Context())
+	ctx, cancel := context.WithCancelCause(r.Context())
 
 	// Tunnel the request
 	clientTunnel.incomingChannel <- IncomingRequest{
 		responseChannel: respChannel,
 		responseWriter:  w,
 		request:         r,
+		ctx:             ctx,
 		cancel:          cancel,
 		cancelChannel:   cancelChannel,
 	}
 
-	// Add header to close the connection
-	w.Header().Set("Connection", "close")
-
 	select {
-	case <-ctx.Done(): // Request is cancelled or Tunnel is closed if context is cancelled
+	case <-ctx.Done(): // Request is canceled or Tunnel is closed if context is canceled
 		close(cancelChannel)
-		protocol.RespondTunnelErr(protocol.CLIENT_DISCONNECT, w)
+		handleCancel(context.Cause(ctx), w)
 		return
 	case resp, _ := <-respChannel: // Await response for tunneled request
+		// Add header to close the connection
+		w.Header().Set("Connection", "close")
+
 		// Write response headers with response status code to original client
 		w.WriteHeader(resp.statusCode)
 
@@ -341,11 +343,12 @@ func (ms *MmarServer) processTunneledRequestsForClient(ct *ClientTunnel) {
 		}
 
 		// Writing request to buffer to forward it
-		serializedReq, serializeErr := serializeRequest(incomingReq.request)
+		serializedReq, serializeErr := serializeRequest(incomingReq)
 		if serializeErr != nil {
 			select {
 			case <-incomingReq.cancelChannel:
-				// Request cancelled
+				// Request canceled
+				continue
 			case incomingReq.responseChannel <- OutgoingResponse{
 				statusCode: http.StatusBadRequest,
 				body:       []byte("Invalid HTTP Request."),
@@ -373,7 +376,7 @@ func (ms *MmarServer) processTunneledRequestsForClient(ct *ClientTunnel) {
 
 		if respErr != nil {
 			if errors.Is(respErr, io.ErrUnexpectedEOF) || errors.Is(respErr, net.ErrClosed) {
-				incomingReq.cancel()
+				incomingReq.cancel(CLIENT_DISCONNECTED_ERR)
 				ms.closeClientTunnel(ct)
 				return
 			}
@@ -399,7 +402,7 @@ func (ms *MmarServer) processTunneledRequestsForClient(ct *ClientTunnel) {
 
 		select {
 		case <-incomingReq.cancelChannel:
-			// Request cancelled
+			// Request canceled
 		case incomingReq.responseChannel <- OutgoingResponse{statusCode: resp.StatusCode, body: respBody}:
 			// Response data sent, do nothing.
 		}
