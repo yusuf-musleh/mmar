@@ -397,7 +397,7 @@ func verifyInvalidContentLengthRequestHandled(t *testing.T, tunnelUrl string) {
 	dialUrl := strings.Replace(tunnelUrl, "http://", "", 1)
 
 	// Write a raw HTTP request with an invalid Content-Length header
-	req := "GET / HTTP/1.1\r\n" +
+	req := "POST /post HTTP/1.1\r\n" +
 		"Host: " + dialUrl + "\r\n" +
 		"Content-Length: abc" + "\r\n" + // Invalid Content-Length header
 		"\r\n"
