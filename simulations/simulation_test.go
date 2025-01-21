@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -475,31 +474,18 @@ func verifyContentLengthWithNoBodyRequestHandled(t *testing.T, tunnelUrl string)
 		t.Errorf("%v: Failed to get response %v", "verifyContentLengthWithNoBodyRequestHandled", respErr)
 	}
 
-	if resp.StatusCode != http.StatusRequestTimeout {
-		t.Errorf(
-			"%v: resp.StatusCode = %v; want %v",
-			"verifyContentLengthWithNoBodyRequestHandled",
-			resp.StatusCode,
-			http.StatusRequestTimeout,
-		)
+	expectedBody := constants.READ_BODY_CHUNK_TIMEOUT_ERR_TEXT
+
+	expectedResp := expectedResponse{
+		statusCode: http.StatusRequestTimeout,
+		headers: map[string]string{
+			"Content-Length": strconv.Itoa(len(expectedBody)),
+			"Content-Type":   "text/plain; charset=utf-8",
+		},
+		textBody: expectedBody,
 	}
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Errorf(
-			"%v: Failed to read response body",
-			"verifyContentLengthWithNoBodyRequestHandled",
-		)
-	}
-
-	if string(respBody) != constants.READ_BODY_CHUNK_TIMEOUT_ERR_TEXT {
-		t.Errorf(
-			"%v: resp.Body = %v; want %v",
-			"verifyContentLengthWithNoBodyRequestHandled",
-			string(respBody),
-			constants.READ_BODY_CHUNK_TIMEOUT_ERR_TEXT,
-		)
-	}
+	validateRequestResponse(t, expectedResp, resp, "verifyContentLengthWithNoBodyRequestHandled")
 }
 
 // Test to verify a HTTP request with a very large body
