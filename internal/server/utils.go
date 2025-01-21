@@ -74,19 +74,15 @@ func serializeRequest(r IncomingRequest) ([]byte, error) {
 		)
 		r, readErr := r.request.Body.Read(buf)
 		readBufferTimout.Stop()
+		contentLength += r
 		if readErr != nil {
 			if errors.Is(readErr, io.EOF) {
-				contentLength += r
 				reqBodyBytes = append(reqBodyBytes, buf[:r]...)
 				break
 			}
 			return nil, readErr
 		}
 		reqBodyBytes = append(reqBodyBytes, buf[:r]...)
-		contentLength += r
-		if r < bufferSize {
-			break
-		}
 	}
 
 	// Set actual Content-Length header

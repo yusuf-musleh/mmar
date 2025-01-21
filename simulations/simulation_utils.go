@@ -26,7 +26,8 @@ type receivedRequest struct {
 type expectedResponse struct {
 	statusCode int
 	headers    map[string]string
-	body       map[string]interface{}
+	jsonBody   map[string]interface{}
+	textBody   string
 }
 
 func validateRequestResponse(t *testing.T, expectedResp expectedResponse, resp *http.Response, testName string) {
@@ -48,10 +49,22 @@ func validateRequestResponse(t *testing.T, expectedResp expectedResponse, resp *
 	jsonDecoder := json.NewDecoder(resp.Body)
 	err := jsonDecoder.Decode(&respBody)
 	if err != nil {
-		log.Fatal("Failed to read response body", err)
+		jsonDecoderBuffered := jsonDecoder.Buffered()
+		nonJsonBody, nonJsonBodyErr := io.ReadAll(jsonDecoderBuffered)
+		if nonJsonBodyErr != nil {
+			t.Error("Failed to read response body", err)
+			return
+		}
+
+		// Handle case when body is not JSON
+		if string(nonJsonBody) != string(expectedResp.textBody) {
+			t.Errorf("%v: body = %v; want %v", testName, string(nonJsonBody), string(expectedResp.textBody))
+			return
+		}
 	}
 
-	expectedJson, _ := json.Marshal(expectedResp.body)
+	// Hanlde case when body is JSON
+	expectedJson, _ := json.Marshal(expectedResp.jsonBody)
 	actualJson, _ := json.Marshal(respBody)
 	if string(actualJson) != string(expectedJson) {
 		t.Errorf("%v: body = %v; want %v", testName, string(actualJson), string(expectedJson))

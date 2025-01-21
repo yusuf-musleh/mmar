@@ -43,7 +43,7 @@ func StartDnsServer() {
 func handleDnsConn(udpConn *net.UDPConn, buffer []byte, n int, udpWriteAddr *net.UDPAddr) {
 	// Extracting information from DNS request
 	transactionID := buffer[:2]
-	questions := buffer[4:6]
+	questionsCount := buffer[4:6]
 	authorityRRs := buffer[8:10]
 	msgQuestion := buffer[12:n]
 
@@ -55,8 +55,8 @@ func handleDnsConn(udpConn *net.UDPConn, buffer []byte, n int, udpWriteAddr *net
 	respFlag, _ := hex.DecodeString("8000") // Bits: 1000 0000 0000 0000
 	respBuffer = append(respBuffer, respFlag...)
 
-	// Adding Questions
-	respBuffer = append(respBuffer, questions...)
+	// Adding QuestionsCount
+	respBuffer = append(respBuffer, questionsCount...)
 
 	// Adding Answers
 	answer, _ := hex.DecodeString("0001")

@@ -133,7 +133,7 @@ func verifyGetRequestSuccess(t *testing.T, client *http.Client, tunnelUrl string
 			"Content-Type":      "application/json",
 			"Simulation-Header": "devserver-handle-get",
 		},
-		body: expectedBody,
+		jsonBody: expectedBody,
 	}
 
 	validateRequestResponse(t, expectedResp, resp, "verifyGetRequestSuccess")
@@ -175,7 +175,7 @@ func verifyGetRequestFail(t *testing.T, client *http.Client, tunnelUrl string) {
 			"Content-Type":      "application/json",
 			"Simulation-Header": "devserver-handle-get-fail",
 		},
-		body: expectedBody,
+		jsonBody: expectedBody,
 	}
 
 	validateRequestResponse(t, expectedResp, resp, "verifyGetRequestFail")
@@ -229,7 +229,7 @@ func verifyPostRequestSuccess(t *testing.T, client *http.Client, tunnelUrl strin
 			"Content-Type":      "application/json",
 			"Simulation-Header": "devserver-handle-post-success",
 		},
-		body: expectedBody,
+		jsonBody: expectedBody,
 	}
 
 	validateRequestResponse(t, expectedResp, resp, "verifyPostRequestSuccess")
@@ -281,7 +281,7 @@ func verifyPostRequestFail(t *testing.T, client *http.Client, tunnelUrl string) 
 			"Content-Type":      "application/json",
 			"Simulation-Header": "devserver-handle-post-fail",
 		},
-		body: expectedBody,
+		jsonBody: expectedBody,
 	}
 
 	validateRequestResponse(t, expectedResp, resp, "verifyPostRequestFail")
@@ -331,7 +331,7 @@ func verifyInvalidMethodRequestHandled(t *testing.T, client *http.Client, tunnel
 			"Content-Type":      "application/json",
 			"Simulation-Header": "devserver-handle-get",
 		},
-		body: expectedBody,
+		jsonBody: expectedBody,
 	}
 
 	validateRequestResponse(t, expectedResp, resp, "verifyInvalidMethodRequestHandled")
@@ -442,37 +442,15 @@ func verifyMismatchedContentLengthRequestHandled(t *testing.T, tunnelUrl string)
 		t.Errorf("%v: Failed to get response %v", "verifyMismatchedContentLengthRequestHandled", respErr)
 	}
 
-	expectedReqHeaders := map[string][]string{
-		"User-Agent":      {"Go-http-client/1.1"}, // Default header in golang client
-		"Accept-Encoding": {"gzip"},               // Default header in golang client
-		"Simulation-Test": {"verify-mismatched-content-length-request-handled"},
-		"Content-Length":  {strconv.Itoa(len(serializedBody))},
-	}
-
-	expectedReqBody := map[string]interface{}{
-		"message": "Hello",
-	}
-
-	expectedBody := map[string]interface{}{
-		"success": true,
-		"data": map[string]interface{}{
-			"posted": "data",
-		},
-		"echo": map[string]interface{}{
-			"reqHeaders": expectedReqHeaders,
-			"reqBody":    expectedReqBody,
-		},
-	}
-	marshaledBody, _ := json.Marshal(expectedBody)
+	expectedBody := constants.READ_BODY_CHUNK_TIMEOUT_ERR_TEXT
 
 	expectedResp := expectedResponse{
-		statusCode: http.StatusOK,
+		statusCode: http.StatusRequestTimeout,
 		headers: map[string]string{
-			"Content-Length":    strconv.Itoa(len(marshaledBody)),
-			"Content-Type":      "application/json",
-			"Simulation-Header": "devserver-handle-post-success",
+			"Content-Length": strconv.Itoa(len(expectedBody)),
+			"Content-Type":   "text/plain; charset=utf-8",
 		},
-		body: expectedBody,
+		textBody: expectedBody,
 	}
 
 	validateRequestResponse(t, expectedResp, resp, "verifyMismatchedContentLengthRequestHandled")
@@ -524,6 +502,59 @@ func verifyContentLengthWithNoBodyRequestHandled(t *testing.T, tunnelUrl string)
 	}
 }
 
+// Test to verify a HTTP request with a very large body
+func verifyRequestWithVeryLargeBody(t *testing.T, client *http.Client, tunnelUrl string) {
+	hundredMb := 100000000
+	reqBody := map[string]interface{}{
+		"success": true,
+		"payload": make([]byte, hundredMb),
+	}
+
+	serializedReqBody, _ := json.Marshal(reqBody)
+	req, reqErr := http.NewRequest("POST", tunnelUrl+devserver.POST_SUCCESS_URL, bytes.NewBuffer(serializedReqBody))
+	if reqErr != nil {
+		log.Fatalf("Failed to create new request: %v", reqErr)
+	}
+	// Adding custom header to confirm that they are propogated when going through mmar
+	req.Header.Set("Simulation-Test", "verify-large-post-request-success")
+
+	resp, respErr := client.Do(req)
+	if respErr != nil {
+		log.Printf("Failed to get response: %v", respErr)
+	}
+
+	expectedReqHeaders := map[string][]string{
+		"User-Agent":      {"Go-http-client/1.1"}, // Default header in golang client
+		"Accept-Encoding": {"gzip"},               // Default header in golang client
+		"Simulation-Test": {"verify-large-post-request-success"},
+		"Content-Length":  {strconv.Itoa(len(serializedReqBody))},
+	}
+
+	expectedBody := map[string]interface{}{
+		"success": true,
+		"data": map[string]interface{}{
+			"posted": "data",
+		},
+		"echo": map[string]interface{}{
+			"reqHeaders": expectedReqHeaders,
+			"reqBody":    reqBody,
+		},
+	}
+	marshaledBody, _ := json.Marshal(expectedBody)
+
+	expectedResp := expectedResponse{
+		statusCode: http.StatusOK,
+		headers: map[string]string{
+			"Content-Length":    strconv.Itoa(len(marshaledBody)),
+			"Content-Type":      "application/json",
+			"Simulation-Header": "devserver-handle-post-success",
+		},
+		jsonBody: expectedBody,
+	}
+
+	validateRequestResponse(t, expectedResp, resp, "verifyRequestWithVeryLargeBody")
+}
+
 func TestSimulation(t *testing.T) {
 	simulationCtx, simulationCancel := context.WithCancel(context.Background())
 
@@ -557,6 +588,9 @@ func TestSimulation(t *testing.T) {
 	verifyInvalidContentLengthRequestHandled(t, tunnelUrl)
 	verifyMismatchedContentLengthRequestHandled(t, tunnelUrl)
 	verifyContentLengthWithNoBodyRequestHandled(t, tunnelUrl)
+
+	// Perform edge case usage tests
+	verifyRequestWithVeryLargeBody(t, client, tunnelUrl)
 
 	// Stop simulation tests
 	simulationCancel()

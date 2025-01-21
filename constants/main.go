@@ -30,7 +30,7 @@ const (
 	MAX_TUNNELS_PER_IP          = 5
 	GRACEFUL_SHUTDOWN_TIMEOUT   = 3
 	TUNNEL_CREATE_TIMEOUT       = 3
-	REQ_BODY_READ_CHUNK_TIMEOUT = 1
+	REQ_BODY_READ_CHUNK_TIMEOUT = 3
 
 	CLIENT_DISCONNECT_ERR_TEXT       = "Tunnel is closed, cannot connect to mmar client."
 	LOCALHOST_NOT_RUNNING_ERR_TEXT   = "Tunneled successfully, but nothing is running on localhost."

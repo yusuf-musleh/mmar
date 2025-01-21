@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 )
 
@@ -113,6 +114,7 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Length", strconv.Itoa(len(respBody)))
 	// Add custom header to response to confirm to confirm that they
 	// propograte when going through mmar
 	w.Header().Set("Simulation-Header", "devserver-handle-post-success")
