@@ -13,6 +13,7 @@ import (
 	"github.com/yusuf-musleh/mmar/constants"
 )
 
+var READ_BODY_CHUNK_ERR error = errors.New(constants.READ_BODY_CHUNK_ERR_TEXT)
 var READ_BODY_CHUNK_TIMEOUT_ERR error = errors.New(constants.READ_BODY_CHUNK_TIMEOUT_ERR_TEXT)
 var CLIENT_DISCONNECTED_ERR error = errors.New(constants.CLIENT_DISCONNECT_ERR_TEXT)
 
@@ -30,33 +31,33 @@ func handleCancel(cause error, w http.ResponseWriter) {
 		return
 	case READ_BODY_CHUNK_TIMEOUT_ERR:
 		responseWith(cause.Error(), w, http.StatusRequestTimeout)
-	case CLIENT_DISCONNECTED_ERR:
+	case READ_BODY_CHUNK_ERR, CLIENT_DISCONNECTED_ERR:
 		responseWith(cause.Error(), w, http.StatusBadRequest)
 	}
 }
 
-func cancelRead(r IncomingRequest) {
-	if errors.Is(r.ctx.Err(), context.Canceled) {
+func cancelRead(ctx context.Context, cancel context.CancelCauseFunc) {
+	if errors.Is(ctx.Err(), context.Canceled) {
 		// If context is Already cancelled, do nothing
 		return
 	}
 
 	// Cancel request
-	r.cancel(READ_BODY_CHUNK_TIMEOUT_ERR)
+	cancel(READ_BODY_CHUNK_TIMEOUT_ERR)
 }
 
 // Serialize HTTP request inorder to tunnel it to mmar client
-func serializeRequest(r IncomingRequest) ([]byte, error) {
+func serializeRequest(ctx context.Context, r *http.Request, cancel context.CancelCauseFunc, serializedRequestChannel chan []byte) {
 	var requestBuff bytes.Buffer
 
 	// Writing & serializing the HTTP Request Line
 	requestBuff.WriteString(
 		fmt.Sprintf(
 			"%v %v %v\nHost: %v\n",
-			r.request.Method,
-			r.request.URL.Path,
-			r.request.Proto,
-			r.request.Host,
+			r.Method,
+			r.URL.Path,
+			r.Proto,
+			r.Host,
 		),
 	)
 
@@ -68,28 +69,31 @@ func serializeRequest(r IncomingRequest) ([]byte, error) {
 
 	// Keep reading response until completely read
 	for {
-		readBufferTimout := time.AfterFunc(
+		// Cancel request if read buffer times out
+		readBufferTimeout := time.AfterFunc(
 			constants.REQ_BODY_READ_CHUNK_TIMEOUT*time.Second,
-			func() { cancelRead(r) },
+			func() { cancelRead(ctx, cancel) },
 		)
-		r, readErr := r.request.Body.Read(buf)
-		readBufferTimout.Stop()
+		r, readErr := r.Body.Read(buf)
+		readBufferTimeout.Stop()
 		contentLength += r
 		if readErr != nil {
 			if errors.Is(readErr, io.EOF) {
 				reqBodyBytes = append(reqBodyBytes, buf[:r]...)
 				break
 			}
-			return nil, readErr
+			// Cancel request if there was an error reading
+			cancel(READ_BODY_CHUNK_ERR)
+			return
 		}
 		reqBodyBytes = append(reqBodyBytes, buf[:r]...)
 	}
 
 	// Set actual Content-Length header
-	r.request.Header.Set("Content-Length", strconv.Itoa(contentLength))
+	r.Header.Set("Content-Length", strconv.Itoa(contentLength))
 
 	// Serialize headers
-	r.request.Header.Clone().Write(&requestBuff)
+	r.Header.Clone().Write(&requestBuff)
 
 	// Add new line
 	requestBuff.WriteByte('\n')
@@ -98,5 +102,6 @@ func serializeRequest(r IncomingRequest) ([]byte, error) {
 	requestBuff.Write(reqBodyBytes)
 	requestBuff.WriteByte('\n')
 
-	return requestBuff.Bytes(), nil
+	// Send serialized request through channel
+	serializedRequestChannel <- requestBuff.Bytes()
 }

@@ -42,9 +42,8 @@ type IncomingRequest struct {
 	responseChannel chan OutgoingResponse
 	responseWriter  http.ResponseWriter
 	request         *http.Request
-	ctx             context.Context
 	cancel          context.CancelCauseFunc
-	cancelChannel   chan bool
+	serializedReq   []byte
 }
 
 type OutgoingResponse struct {
@@ -171,36 +170,48 @@ func (ms *MmarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create response channel for tunneled request
-	respChannel := make(chan OutgoingResponse)
-	cancelChannel := make(chan bool)
+	// Create channel to receive serialized request
+	serializedReqChannel := make(chan []byte)
 
 	ctx, cancel := context.WithCancelCause(r.Context())
 
-	// Tunnel the request
-	clientTunnel.incomingChannel <- IncomingRequest{
-		responseChannel: respChannel,
-		responseWriter:  w,
-		request:         r,
-		ctx:             ctx,
-		cancel:          cancel,
-		cancelChannel:   cancelChannel,
-	}
+	// Writing request to buffer to forward it
+	go serializeRequest(ctx, r, cancel, serializedReqChannel)
 
 	select {
-	case <-ctx.Done(): // Request is canceled or Tunnel is closed if context is canceled
-		close(cancelChannel)
+	case <-ctx.Done():
+		// We could not serialize request, so we cancelled it
 		handleCancel(context.Cause(ctx), w)
 		return
-	case resp, _ := <-respChannel: // Await response for tunneled request
-		// Add header to close the connection
-		w.Header().Set("Connection", "close")
+	case serializedRequest, _ := <-serializedReqChannel:
+		// Request serialized, we can proceed to tunnel it
 
-		// Write response headers with response status code to original client
-		w.WriteHeader(resp.statusCode)
+		// Create response channel to receive response for tunneled request
+		respChannel := make(chan OutgoingResponse)
 
-		// Write the response body to original client
-		w.Write(resp.body)
+		// Tunnel the request
+		clientTunnel.incomingChannel <- IncomingRequest{
+			responseChannel: respChannel,
+			responseWriter:  w,
+			request:         r,
+			cancel:          cancel,
+			serializedReq:   serializedRequest,
+		}
+
+		select {
+		case <-ctx.Done(): // Request is canceled or Tunnel is closed if context is canceled
+			handleCancel(context.Cause(ctx), w)
+			return
+		case resp, _ := <-respChannel: // Await response for tunneled request
+			// Add header to close the connection
+			w.Header().Set("Connection", "close")
+
+			// Write response headers with response status code to original client
+			w.WriteHeader(resp.statusCode)
+
+			// Write the response body to original client
+			w.Write(resp.body)
+		}
 	}
 }
 
@@ -342,23 +353,8 @@ func (ms *MmarServer) processTunneledRequestsForClient(ct *ClientTunnel) {
 			return
 		}
 
-		// Writing request to buffer to forward it
-		serializedReq, serializeErr := serializeRequest(incomingReq)
-		if serializeErr != nil {
-			select {
-			case <-incomingReq.cancelChannel:
-				// Request canceled
-				continue
-			case incomingReq.responseChannel <- OutgoingResponse{
-				statusCode: http.StatusBadRequest,
-				body:       []byte("Invalid HTTP Request."),
-			}:
-				// Response data sent, do nothing.
-			}
-		}
-
 		// Forward the request to mmar client
-		reqMessage := protocol.TunnelMessage{MsgType: protocol.REQUEST, MsgData: serializedReq}
+		reqMessage := protocol.TunnelMessage{MsgType: protocol.REQUEST, MsgData: incomingReq.serializedReq}
 		if err := ct.SendMessage(reqMessage); err != nil {
 			log.Fatal(err)
 		}
@@ -400,12 +396,8 @@ func (ms *MmarServer) processTunneledRequestsForClient(ct *ClientTunnel) {
 			}
 		}
 
-		select {
-		case <-incomingReq.cancelChannel:
-			// Request canceled
-		case incomingReq.responseChannel <- OutgoingResponse{statusCode: resp.StatusCode, body: respBody}:
-			// Response data sent, do nothing.
-		}
+		// Send response data back
+		incomingReq.responseChannel <- OutgoingResponse{statusCode: resp.StatusCode, body: respBody}
 
 		// Close response body
 		resp.Body.Close()

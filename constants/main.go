@@ -34,6 +34,7 @@ const (
 
 	CLIENT_DISCONNECT_ERR_TEXT       = "Tunnel is closed, cannot connect to mmar client."
 	LOCALHOST_NOT_RUNNING_ERR_TEXT   = "Tunneled successfully, but nothing is running on localhost."
+	READ_BODY_CHUNK_ERR_TEXT         = "Error reading request body"
 	READ_BODY_CHUNK_TIMEOUT_ERR_TEXT = "Timeout reading request body"
 
 	// TERMINAL ANSI ESCAPED COLORS
