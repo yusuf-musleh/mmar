@@ -36,6 +36,7 @@ const (
 	LOCALHOST_NOT_RUNNING_ERR_TEXT   = "Tunneled successfully, but nothing is running on localhost."
 	READ_BODY_CHUNK_ERR_TEXT         = "Error reading request body"
 	READ_BODY_CHUNK_TIMEOUT_ERR_TEXT = "Timeout reading request body"
+	READ_RESP_BODY_ERR_TEXT          = "Could not read response from destination server, check your server's logs for any errors."
 
 	// TERMINAL ANSI ESCAPED COLORS
 	DEFAULT_COLOR = ""

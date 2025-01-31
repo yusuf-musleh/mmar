@@ -383,8 +383,9 @@ func (ms *MmarServer) processTunneledRequestsForClient(ct *ClientTunnel) {
 
 		respBody, respBodyErr := io.ReadAll(resp.Body)
 		if respBodyErr != nil {
-			log.Fatalf("Failed to parse response body: %v\n\n", respBodyErr)
-			os.Exit(1)
+			logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to parse response body: %v\n\n", respBodyErr))
+			incomingReq.cancel(READ_RESP_BODY_ERR)
+			continue
 		}
 
 		// Set headers for response

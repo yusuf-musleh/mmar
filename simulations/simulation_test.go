@@ -541,6 +541,32 @@ func verifyRequestWithVeryLargeBody(t *testing.T, client *http.Client, tunnelUrl
 	validateRequestResponse(t, expectedResp, resp, "verifyRequestWithVeryLargeBody")
 }
 
+// Test to verify that mmar handles invalid response from dev server gracefully
+func verifyDevServerReturningInvalidRespHandled(t *testing.T, client *http.Client, tunnelUrl string) {
+	req, reqErr := http.NewRequest("GET", tunnelUrl+devserver.BAD_RESPONSE_URL, nil)
+	if reqErr != nil {
+		log.Fatalf("Failed to create new request: %v", reqErr)
+	}
+
+	resp, respErr := client.Do(req)
+	if respErr != nil {
+		log.Printf("Failed to get response: %v", respErr)
+	}
+
+	expectedBody := constants.READ_RESP_BODY_ERR_TEXT
+
+	expectedResp := expectedResponse{
+		statusCode: http.StatusInternalServerError,
+		headers: map[string]string{
+			"Content-Length": strconv.Itoa(len(expectedBody)),
+			"Content-Type":   "text/plain; charset=utf-8",
+		},
+		textBody: expectedBody,
+	}
+
+	validateRequestResponse(t, expectedResp, resp, "verifyDevServerReturningInvalidRespHandled")
+}
+
 func TestSimulation(t *testing.T) {
 	simulationCtx, simulationCancel := context.WithCancel(context.Background())
 
@@ -577,6 +603,7 @@ func TestSimulation(t *testing.T) {
 
 	// Perform edge case usage tests
 	verifyRequestWithVeryLargeBody(t, client, tunnelUrl)
+	verifyDevServerReturningInvalidRespHandled(t, client, tunnelUrl)
 
 	// Stop simulation tests
 	simulationCancel()

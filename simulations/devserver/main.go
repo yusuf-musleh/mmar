@@ -14,6 +14,7 @@ const (
 	GET_FAILURE_URL  = "/get-fail"
 	POST_SUCCESS_URL = "/post"
 	POST_FAILURE_URL = "/post-fail"
+	BAD_RESPONSE_URL = "/bad-resp"
 )
 
 type DevServer struct {
@@ -41,6 +42,7 @@ func setupMux() *http.ServeMux {
 	mux.Handle(GET_FAILURE_URL, http.HandlerFunc(handleGetFail))
 	mux.Handle(POST_SUCCESS_URL, http.HandlerFunc(handlePost))
 	mux.Handle(POST_FAILURE_URL, http.HandlerFunc(handlePostFail))
+	mux.Handle(BAD_RESPONSE_URL, http.HandlerFunc(handleBadResp))
 
 	return mux
 }
@@ -149,5 +151,22 @@ func handlePostFail(w http.ResponseWriter, r *http.Request) {
 	// propograte when going through mmar
 	w.Header().Set("Simulation-Header", "devserver-handle-post-fail")
 	w.WriteHeader(http.StatusBadRequest)
+	w.Write(respBody)
+}
+
+// Request handler that returns an invalid HTTP response
+func handleBadResp(w http.ResponseWriter, r *http.Request) {
+	// Return a response with Content-Length headers that do not match the actual data
+	respBody, err := json.Marshal(map[string]interface{}{
+		"data": "some data",
+	})
+
+	if err != nil {
+		log.Fatalf("Failed to marshal response for GET: %v", err)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Length", "123") // Content length much larger than actual content
+	w.WriteHeader(http.StatusOK)
 	w.Write(respBody)
 }
