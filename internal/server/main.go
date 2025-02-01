@@ -44,6 +44,7 @@ type IncomingRequest struct {
 	request         *http.Request
 	cancel          context.CancelCauseFunc
 	serializedReq   []byte
+	ctx             context.Context
 }
 
 type OutgoingResponse struct {
@@ -196,6 +197,7 @@ func (ms *MmarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			request:         r,
 			cancel:          cancel,
 			serializedReq:   serializedRequest,
+			ctx:             ctx,
 		}
 
 		select {
@@ -397,11 +399,16 @@ func (ms *MmarServer) processTunneledRequestsForClient(ct *ClientTunnel) {
 			}
 		}
 
-		// Send response data back
-		incomingReq.responseChannel <- OutgoingResponse{statusCode: resp.StatusCode, body: respBody}
-
 		// Close response body
 		resp.Body.Close()
+
+		select {
+		case <-incomingReq.ctx.Done():
+			// Request is canceled, on to the next request
+			continue
+		case incomingReq.responseChannel <- OutgoingResponse{statusCode: resp.StatusCode, body: respBody}:
+			// Send response data back
+		}
 	}
 }
 
@@ -429,6 +436,20 @@ func (ms *MmarServer) processTunnelMessages(ct *ClientTunnel) {
 			resp.Write(&responseBuff)
 			notRunningMsg := protocol.TunnelMessage{MsgType: protocol.RESPONSE, MsgData: responseBuff.Bytes()}
 			ct.outgoingChannel <- notRunningMsg
+		case protocol.DEST_REQUEST_TIMEDOUT:
+			// Create a response for Tunnel connected but localhost took too long to respond
+			errState := protocol.TunnelErrState(protocol.DEST_REQUEST_TIMEDOUT)
+			resp := http.Response{
+				Status:     "200 OK",
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBufferString(errState)),
+			}
+
+			// Writing response to buffer to tunnel it back
+			var responseBuff bytes.Buffer
+			resp.Write(&responseBuff)
+			destTimedoutMsg := protocol.TunnelMessage{MsgType: protocol.RESPONSE, MsgData: responseBuff.Bytes()}
+			ct.outgoingChannel <- destTimedoutMsg
 		case protocol.CLIENT_DISCONNECT:
 			ms.closeClientTunnel(ct)
 			return

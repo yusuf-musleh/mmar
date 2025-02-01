@@ -567,6 +567,33 @@ func verifyDevServerReturningInvalidRespHandled(t *testing.T, client *http.Clien
 	validateRequestResponse(t, expectedResp, resp, "verifyDevServerReturningInvalidRespHandled")
 }
 
+func verifyDevServerLongRunningReqHandledGradefully(t *testing.T, client *http.Client, tunnelUrl string) {
+	req, reqErr := http.NewRequest("GET", tunnelUrl+devserver.LONG_RUNNING_URL, nil)
+	if reqErr != nil {
+		log.Fatalf("Failed to create new request: %v", reqErr)
+	}
+	// Adding custom header to confirm that they are propogated when going through mmar
+	req.Header.Set("Simulation-Test", "verify-long-running-request-handled")
+
+	resp, respErr := client.Do(req)
+	if respErr != nil {
+		log.Printf("Failed to get response: %v", respErr)
+	}
+
+	expectedBody := constants.DEST_REQUEST_TIMEDOUT_ERR_TEXT
+
+	expectedResp := expectedResponse{
+		statusCode: http.StatusOK,
+		headers: map[string]string{
+			"Content-Length": strconv.Itoa(len(expectedBody)),
+			"Content-Type":   "text/plain; charset=utf-8",
+		},
+		textBody: expectedBody,
+	}
+
+	validateRequestResponse(t, expectedResp, resp, "verifyDevServerLongRunningReqHandledGradefully")
+}
+
 func TestSimulation(t *testing.T) {
 	simulationCtx, simulationCancel := context.WithCancel(context.Background())
 
@@ -604,6 +631,7 @@ func TestSimulation(t *testing.T) {
 	// Perform edge case usage tests
 	verifyRequestWithVeryLargeBody(t, client, tunnelUrl)
 	verifyDevServerReturningInvalidRespHandled(t, client, tunnelUrl)
+	verifyDevServerLongRunningReqHandledGradefully(t, client, tunnelUrl)
 
 	// Stop simulation tests
 	simulationCancel()

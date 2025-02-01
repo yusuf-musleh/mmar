@@ -31,9 +31,11 @@ const (
 	GRACEFUL_SHUTDOWN_TIMEOUT   = 3
 	TUNNEL_CREATE_TIMEOUT       = 3
 	REQ_BODY_READ_CHUNK_TIMEOUT = 3
+	DEST_REQUEST_TIMEOUT        = 30
 
 	CLIENT_DISCONNECT_ERR_TEXT       = "Tunnel is closed, cannot connect to mmar client."
 	LOCALHOST_NOT_RUNNING_ERR_TEXT   = "Tunneled successfully, but nothing is running on localhost."
+	DEST_REQUEST_TIMEDOUT_ERR_TEXT   = "Destination server took too long to respond"
 	READ_BODY_CHUNK_ERR_TEXT         = "Error reading request body"
 	READ_BODY_CHUNK_TIMEOUT_ERR_TEXT = "Timeout reading request body"
 	READ_RESP_BODY_ERR_TEXT          = "Could not read response from destination server, check your server's logs for any errors."

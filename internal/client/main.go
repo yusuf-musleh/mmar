@@ -49,7 +49,9 @@ func (mc *MmarClient) localizeRequest(request *http.Request) {
 
 // Process requests coming from mmar server and forward them to localhost
 func (mc *MmarClient) handleRequestMessage(tunnelMsg protocol.TunnelMessage) {
-	fwdClient := &http.Client{}
+	fwdClient := &http.Client{
+		Timeout: constants.DEST_REQUEST_TIMEOUT * time.Second,
+	}
 
 	reqReader := bufio.NewReader(bytes.NewReader(tunnelMsg.MsgData))
 	req, reqErr := http.ReadRequest(reqReader)
@@ -75,6 +77,12 @@ func (mc *MmarClient) handleRequestMessage(tunnelMsg protocol.TunnelMessage) {
 		if errors.Is(fwdErr, syscall.ECONNREFUSED) || errors.Is(fwdErr, io.ErrUnexpectedEOF) {
 			localhostNotRunningMsg := protocol.TunnelMessage{MsgType: protocol.LOCALHOST_NOT_RUNNING}
 			if err := mc.SendMessage(localhostNotRunningMsg); err != nil {
+				log.Fatal(err)
+			}
+			return
+		} else if errors.Is(fwdErr, context.DeadlineExceeded) {
+			destServerTimedoutMsg := protocol.TunnelMessage{MsgType: protocol.DEST_REQUEST_TIMEDOUT}
+			if err := mc.SendMessage(destServerTimedoutMsg); err != nil {
 				log.Fatal(err)
 			}
 			return

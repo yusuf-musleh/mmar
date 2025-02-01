@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -15,6 +16,7 @@ const (
 	POST_SUCCESS_URL = "/post"
 	POST_FAILURE_URL = "/post-fail"
 	BAD_RESPONSE_URL = "/bad-resp"
+	LONG_RUNNING_URL = "/long-running"
 )
 
 type DevServer struct {
@@ -43,6 +45,7 @@ func setupMux() *http.ServeMux {
 	mux.Handle(POST_SUCCESS_URL, http.HandlerFunc(handlePost))
 	mux.Handle(POST_FAILURE_URL, http.HandlerFunc(handlePostFail))
 	mux.Handle(BAD_RESPONSE_URL, http.HandlerFunc(handleBadResp))
+	mux.Handle(LONG_RUNNING_URL, http.HandlerFunc(handleLongRunningReq))
 
 	return mux
 }
@@ -167,6 +170,32 @@ func handleBadResp(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Length", "123") // Content length much larger than actual content
+	w.WriteHeader(http.StatusOK)
+	w.Write(respBody)
+}
+
+// Request handle that takes a long time before returning response
+func handleLongRunningReq(w http.ResponseWriter, r *http.Request) {
+	// Include echo of request headers in response to confirm they were received
+	respBody, err := json.Marshal(map[string]interface{}{
+		"success": true,
+		"data":    "some data",
+		"echo": map[string]interface{}{
+			"reqHeaders": r.Header,
+		},
+	})
+
+	if err != nil {
+		log.Fatalf("Failed to marshal response for GET: %v", err)
+	}
+
+	// Sleep longer than the dest server request timeout (30s)
+	time.Sleep(40 * time.Second)
+
+	w.Header().Set("Content-Type", "application/json")
+	// Add custom header to response to confirm to confirm that they
+	// propograte when going through mmar
+	w.Header().Set("Simulation-Header", "devserver-handle-long-running")
 	w.WriteHeader(http.StatusOK)
 	w.Write(respBody)
 }

@@ -22,6 +22,7 @@ const (
 	CLIENT_DISCONNECT
 	CLIENT_TUNNEL_LIMIT
 	LOCALHOST_NOT_RUNNING
+	DEST_REQUEST_TIMEDOUT
 )
 
 var INVALID_MESSAGE_PROTOCOL_VERSION = errors.New("Invalid Message Protocol Version")
@@ -30,7 +31,7 @@ var INVALID_MESSAGE_TYPE = errors.New("Invalid Tunnel Message Type")
 func isValidTunnelMessageType(mt uint8) (uint8, error) {
 	// Iterate through all the message type, from first to last, checking
 	// if the provided message type matches one of them
-	for msgType := REQUEST; msgType <= LOCALHOST_NOT_RUNNING; msgType++ {
+	for msgType := REQUEST; msgType <= DEST_REQUEST_TIMEDOUT; msgType++ {
 		if mt == msgType {
 			return msgType, nil
 		}
@@ -44,6 +45,7 @@ func TunnelErrState(errState uint8) string {
 	errStates := map[uint8]string{
 		CLIENT_DISCONNECT:     constants.CLIENT_DISCONNECT_ERR_TEXT,
 		LOCALHOST_NOT_RUNNING: constants.LOCALHOST_NOT_RUNNING_ERR_TEXT,
+		DEST_REQUEST_TIMEDOUT: constants.DEST_REQUEST_TIMEDOUT_ERR_TEXT,
 	}
 	fallbackErr := "An error occured while attempting to tunnel."
 
