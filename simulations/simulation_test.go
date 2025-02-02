@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -97,7 +98,8 @@ func StartLocalDevServer() *devserver.DevServer {
 }
 
 // Test to verify successful GET request through mmar tunnel returned expected request/response
-func verifyGetRequestSuccess(t *testing.T, client *http.Client, tunnelUrl string) {
+func verifyGetRequestSuccess(t *testing.T, client *http.Client, tunnelUrl string, wg *sync.WaitGroup) {
+	defer wg.Done()
 	req, reqErr := http.NewRequest("GET", tunnelUrl+devserver.GET_SUCCESS_URL, nil)
 	if reqErr != nil {
 		log.Fatalf("Failed to create new request: %v", reqErr)
@@ -139,7 +141,8 @@ func verifyGetRequestSuccess(t *testing.T, client *http.Client, tunnelUrl string
 }
 
 // Test to verify failed GET request through mmar tunnel returned expected request/response
-func verifyGetRequestFail(t *testing.T, client *http.Client, tunnelUrl string) {
+func verifyGetRequestFail(t *testing.T, client *http.Client, tunnelUrl string, wg *sync.WaitGroup) {
+	defer wg.Done()
 	req, reqErr := http.NewRequest("GET", tunnelUrl+devserver.GET_FAILURE_URL, nil)
 	if reqErr != nil {
 		log.Fatalf("Failed to create new request: %v", reqErr)
@@ -181,7 +184,8 @@ func verifyGetRequestFail(t *testing.T, client *http.Client, tunnelUrl string) {
 }
 
 // Test to verify successful POST request through mmar tunnel returned expected request/response
-func verifyPostRequestSuccess(t *testing.T, client *http.Client, tunnelUrl string) {
+func verifyPostRequestSuccess(t *testing.T, client *http.Client, tunnelUrl string, wg *sync.WaitGroup) {
+	defer wg.Done()
 	reqBody := map[string]interface{}{
 		"success": true,
 		"payload": map[string]interface{}{
@@ -235,7 +239,8 @@ func verifyPostRequestSuccess(t *testing.T, client *http.Client, tunnelUrl strin
 }
 
 // Test to verify failed POST request through mmar tunnel returned expected request/response
-func verifyPostRequestFail(t *testing.T, client *http.Client, tunnelUrl string) {
+func verifyPostRequestFail(t *testing.T, client *http.Client, tunnelUrl string, wg *sync.WaitGroup) {
+	defer wg.Done()
 	reqBody := map[string]interface{}{
 		"success": false,
 		"payload": map[string]interface{}{
@@ -287,7 +292,8 @@ func verifyPostRequestFail(t *testing.T, client *http.Client, tunnelUrl string) 
 }
 
 // Test to verify a HTTP request with an invalid method is handled
-func verifyInvalidMethodRequestHandled(t *testing.T, client *http.Client, tunnelUrl string) {
+func verifyInvalidMethodRequestHandled(t *testing.T, client *http.Client, tunnelUrl string, wg *sync.WaitGroup) {
+	defer wg.Done()
 	url, urlErr := url.Parse(tunnelUrl + devserver.GET_SUCCESS_URL)
 	if urlErr != nil {
 		log.Fatal("Failed to create url", urlErr)
@@ -337,7 +343,8 @@ func verifyInvalidMethodRequestHandled(t *testing.T, client *http.Client, tunnel
 }
 
 // Test to verify a HTTP request with invalid headers is handled
-func verifyInvalidHeadersRequestHandled(t *testing.T, tunnelUrl string) {
+func verifyInvalidHeadersRequestHandled(t *testing.T, tunnelUrl string, wg *sync.WaitGroup) {
+	defer wg.Done()
 	dialUrl := strings.Replace(tunnelUrl, "http://", "", 1)
 
 	// Write a raw HTTP request with an invalid header
@@ -365,7 +372,8 @@ func verifyInvalidHeadersRequestHandled(t *testing.T, tunnelUrl string) {
 }
 
 // Test to verify a HTTP request with invalid protocol version is handled
-func verifyInvalidHttpVersionRequestHandled(t *testing.T, tunnelUrl string) {
+func verifyInvalidHttpVersionRequestHandled(t *testing.T, tunnelUrl string, wg *sync.WaitGroup) {
+	defer wg.Done()
 	dialUrl := strings.Replace(tunnelUrl, "http://", "", 1)
 
 	// Write a raw HTTP request with an invalid HTTP version
@@ -392,7 +400,8 @@ func verifyInvalidHttpVersionRequestHandled(t *testing.T, tunnelUrl string) {
 }
 
 // Test to verify a HTTP request with a invalid Content-Length header
-func verifyInvalidContentLengthRequestHandled(t *testing.T, tunnelUrl string) {
+func verifyInvalidContentLengthRequestHandled(t *testing.T, tunnelUrl string, wg *sync.WaitGroup) {
+	defer wg.Done()
 	dialUrl := strings.Replace(tunnelUrl, "http://", "", 1)
 
 	// Write a raw HTTP request with an invalid Content-Length header
@@ -420,7 +429,8 @@ func verifyInvalidContentLengthRequestHandled(t *testing.T, tunnelUrl string) {
 }
 
 // Test to verify a HTTP request with a mismatched Content-Length header
-func verifyMismatchedContentLengthRequestHandled(t *testing.T, tunnelUrl string) {
+func verifyMismatchedContentLengthRequestHandled(t *testing.T, tunnelUrl string, wg *sync.WaitGroup) {
+	defer wg.Done()
 	dialUrl := strings.Replace(tunnelUrl, "http://", "", 1)
 
 	serializedBody := "{\"message\": \"Hello\"}\r\n"
@@ -456,7 +466,8 @@ func verifyMismatchedContentLengthRequestHandled(t *testing.T, tunnelUrl string)
 }
 
 // Test to verify a HTTP request with a Content-Length header but no body
-func verifyContentLengthWithNoBodyRequestHandled(t *testing.T, tunnelUrl string) {
+func verifyContentLengthWithNoBodyRequestHandled(t *testing.T, tunnelUrl string, wg *sync.WaitGroup) {
+	defer wg.Done()
 	dialUrl := strings.Replace(tunnelUrl, "http://", "", 1)
 
 	// Write a raw HTTP request with Content-Length header but no body
@@ -489,7 +500,8 @@ func verifyContentLengthWithNoBodyRequestHandled(t *testing.T, tunnelUrl string)
 }
 
 // Test to verify a HTTP request with a large body but still within the limit
-func verifyRequestWithLargeBody(t *testing.T, client *http.Client, tunnelUrl string) {
+func verifyRequestWithLargeBody(t *testing.T, client *http.Client, tunnelUrl string, wg *sync.WaitGroup) {
+	defer wg.Done()
 	littleUnderTenMb := 999989
 	reqBody := map[string]interface{}{
 		"success": true,
@@ -542,7 +554,8 @@ func verifyRequestWithLargeBody(t *testing.T, client *http.Client, tunnelUrl str
 }
 
 // Test to verify a HTTP request with a very large body, over the 10mb limit
-func verifyRequestWithVeryLargeBody(t *testing.T, client *http.Client, tunnelUrl string) {
+func verifyRequestWithVeryLargeBody(t *testing.T, client *http.Client, tunnelUrl string, wg *sync.WaitGroup) {
+	defer wg.Done()
 	hundredMb := 100000000
 	reqBody := map[string]interface{}{
 		"success": true,
@@ -577,7 +590,8 @@ func verifyRequestWithVeryLargeBody(t *testing.T, client *http.Client, tunnelUrl
 }
 
 // Test to verify that mmar handles invalid response from dev server gracefully
-func verifyDevServerReturningInvalidRespHandled(t *testing.T, client *http.Client, tunnelUrl string) {
+func verifyDevServerReturningInvalidRespHandled(t *testing.T, client *http.Client, tunnelUrl string, wg *sync.WaitGroup) {
+	defer wg.Done()
 	req, reqErr := http.NewRequest("GET", tunnelUrl+devserver.BAD_RESPONSE_URL, nil)
 	if reqErr != nil {
 		log.Fatalf("Failed to create new request: %v", reqErr)
@@ -603,7 +617,8 @@ func verifyDevServerReturningInvalidRespHandled(t *testing.T, client *http.Clien
 }
 
 // Test to verify that mmar timesout if devserver takes too long to respond
-func verifyDevServerLongRunningReqHandledGradefully(t *testing.T, client *http.Client, tunnelUrl string) {
+func verifyDevServerLongRunningReqHandledGradefully(t *testing.T, client *http.Client, tunnelUrl string, wg *sync.WaitGroup) {
+	defer wg.Done()
 	req, reqErr := http.NewRequest("GET", tunnelUrl+devserver.LONG_RUNNING_URL, nil)
 	if reqErr != nil {
 		log.Fatalf("Failed to create new request: %v", reqErr)
@@ -629,7 +644,8 @@ func verifyDevServerLongRunningReqHandledGradefully(t *testing.T, client *http.C
 }
 
 // Test to verify that mmar handles crashes in the devserver gracefully
-func verifyDevServerCrashHandledGracefully(t *testing.T, client *http.Client, tunnelUrl string) {
+func verifyDevServerCrashHandledGracefully(t *testing.T, client *http.Client, tunnelUrl string, wg *sync.WaitGroup) {
+	defer wg.Done()
 	req, reqErr := http.NewRequest("GET", tunnelUrl+devserver.CRASH_URL, nil)
 	if reqErr != nil {
 		log.Fatalf("Failed to create new request: %v", reqErr)
@@ -674,26 +690,31 @@ func TestSimulation(t *testing.T) {
 	// Initialize http client
 	client := httpClient()
 
+	var wg sync.WaitGroup
+	wg.Add(15)
+
 	// Perform simulated usage tests
-	verifyGetRequestSuccess(t, client, tunnelUrl)
-	verifyGetRequestFail(t, client, tunnelUrl)
-	verifyPostRequestSuccess(t, client, tunnelUrl)
-	verifyPostRequestFail(t, client, tunnelUrl)
+	go verifyGetRequestSuccess(t, client, tunnelUrl, &wg)
+	go verifyGetRequestFail(t, client, tunnelUrl, &wg)
+	go verifyPostRequestSuccess(t, client, tunnelUrl, &wg)
+	go verifyPostRequestFail(t, client, tunnelUrl, &wg)
 
 	// Perform Invalid HTTP requests to test durability of mmar
-	verifyInvalidMethodRequestHandled(t, client, tunnelUrl)
-	verifyInvalidHeadersRequestHandled(t, tunnelUrl)
-	verifyInvalidHttpVersionRequestHandled(t, tunnelUrl)
-	verifyInvalidContentLengthRequestHandled(t, tunnelUrl)
-	verifyMismatchedContentLengthRequestHandled(t, tunnelUrl)
-	verifyContentLengthWithNoBodyRequestHandled(t, tunnelUrl)
-	verifyRequestWithLargeBody(t, client, tunnelUrl)
+	go verifyInvalidMethodRequestHandled(t, client, tunnelUrl, &wg)
+	go verifyInvalidHeadersRequestHandled(t, tunnelUrl, &wg)
+	go verifyInvalidHttpVersionRequestHandled(t, tunnelUrl, &wg)
+	go verifyInvalidContentLengthRequestHandled(t, tunnelUrl, &wg)
+	go verifyMismatchedContentLengthRequestHandled(t, tunnelUrl, &wg)
+	go verifyContentLengthWithNoBodyRequestHandled(t, tunnelUrl, &wg)
+	go verifyRequestWithLargeBody(t, client, tunnelUrl, &wg)
 
 	// Perform edge case usage tests
-	verifyRequestWithVeryLargeBody(t, client, tunnelUrl)
-	verifyDevServerReturningInvalidRespHandled(t, client, tunnelUrl)
-	verifyDevServerLongRunningReqHandledGradefully(t, client, tunnelUrl)
-	verifyDevServerCrashHandledGracefully(t, client, tunnelUrl)
+	go verifyRequestWithVeryLargeBody(t, client, tunnelUrl, &wg)
+	go verifyDevServerReturningInvalidRespHandled(t, client, tunnelUrl, &wg)
+	go verifyDevServerLongRunningReqHandledGradefully(t, client, tunnelUrl, &wg)
+	go verifyDevServerCrashHandledGracefully(t, client, tunnelUrl, &wg)
+
+	wg.Wait()
 
 	// Stop simulation tests
 	simulationCancel()
