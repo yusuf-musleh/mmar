@@ -488,12 +488,12 @@ func verifyContentLengthWithNoBodyRequestHandled(t *testing.T, tunnelUrl string)
 	validateRequestResponse(t, expectedResp, resp, "verifyContentLengthWithNoBodyRequestHandled")
 }
 
-// Test to verify a HTTP request with a very large body
-func verifyRequestWithVeryLargeBody(t *testing.T, client *http.Client, tunnelUrl string) {
-	hundredMb := 100000000
+// Test to verify a HTTP request with a large body but still within the limit
+func verifyRequestWithLargeBody(t *testing.T, client *http.Client, tunnelUrl string) {
+	littleUnderTenMb := 999989
 	reqBody := map[string]interface{}{
 		"success": true,
-		"payload": make([]byte, hundredMb),
+		"payload": make([]byte, littleUnderTenMb),
 	}
 
 	serializedReqBody, _ := json.Marshal(reqBody)
@@ -536,6 +536,41 @@ func verifyRequestWithVeryLargeBody(t *testing.T, client *http.Client, tunnelUrl
 			"Simulation-Header": "devserver-handle-post-success",
 		},
 		jsonBody: expectedBody,
+	}
+
+	validateRequestResponse(t, expectedResp, resp, "verifyRequestWithLargeBody")
+}
+
+// Test to verify a HTTP request with a very large body, over the 10mb limit
+func verifyRequestWithVeryLargeBody(t *testing.T, client *http.Client, tunnelUrl string) {
+	hundredMb := 100000000
+	reqBody := map[string]interface{}{
+		"success": true,
+		"payload": make([]byte, hundredMb),
+	}
+
+	serializedReqBody, _ := json.Marshal(reqBody)
+	req, reqErr := http.NewRequest("POST", tunnelUrl+devserver.POST_SUCCESS_URL, bytes.NewBuffer(serializedReqBody))
+	if reqErr != nil {
+		log.Fatalf("Failed to create new request: %v", reqErr)
+	}
+	// Adding custom header to confirm that they are propogated when going through mmar
+	req.Header.Set("Simulation-Test", "verify-very-large-post-request-success")
+
+	resp, respErr := client.Do(req)
+	if respErr != nil {
+		log.Printf("Failed to get response: %v", respErr)
+	}
+
+	expectedBody := constants.MAX_REQ_BODY_SIZE_ERR_TEXT
+
+	expectedResp := expectedResponse{
+		statusCode: http.StatusRequestEntityTooLarge,
+		headers: map[string]string{
+			"Content-Length": strconv.Itoa(len(expectedBody)),
+			"Content-Type":   "text/plain; charset=utf-8",
+		},
+		textBody: expectedBody,
 	}
 
 	validateRequestResponse(t, expectedResp, resp, "verifyRequestWithVeryLargeBody")
@@ -652,6 +687,7 @@ func TestSimulation(t *testing.T) {
 	verifyInvalidContentLengthRequestHandled(t, tunnelUrl)
 	verifyMismatchedContentLengthRequestHandled(t, tunnelUrl)
 	verifyContentLengthWithNoBodyRequestHandled(t, tunnelUrl)
+	verifyRequestWithLargeBody(t, client, tunnelUrl)
 
 	// Perform edge case usage tests
 	verifyRequestWithVeryLargeBody(t, client, tunnelUrl)

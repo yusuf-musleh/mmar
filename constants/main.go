@@ -32,6 +32,7 @@ const (
 	TUNNEL_CREATE_TIMEOUT       = 3
 	REQ_BODY_READ_CHUNK_TIMEOUT = 3
 	DEST_REQUEST_TIMEOUT        = 30
+	MAX_REQ_BODY_SIZE           = 10000000 // 10mb
 
 	CLIENT_DISCONNECT_ERR_TEXT       = "Tunnel is closed, cannot connect to mmar client."
 	LOCALHOST_NOT_RUNNING_ERR_TEXT   = "Tunneled successfully, but nothing is running on localhost."
@@ -39,6 +40,7 @@ const (
 	READ_BODY_CHUNK_ERR_TEXT         = "Error reading request body"
 	READ_BODY_CHUNK_TIMEOUT_ERR_TEXT = "Timeout reading request body"
 	READ_RESP_BODY_ERR_TEXT          = "Could not read response from destination server, check your server's logs for any errors."
+	MAX_REQ_BODY_SIZE_ERR_TEXT       = "Request too large"
 
 	// TERMINAL ANSI ESCAPED COLORS
 	DEFAULT_COLOR = ""

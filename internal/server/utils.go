@@ -17,6 +17,7 @@ var READ_BODY_CHUNK_ERR error = errors.New(constants.READ_BODY_CHUNK_ERR_TEXT)
 var READ_BODY_CHUNK_TIMEOUT_ERR error = errors.New(constants.READ_BODY_CHUNK_TIMEOUT_ERR_TEXT)
 var CLIENT_DISCONNECTED_ERR error = errors.New(constants.CLIENT_DISCONNECT_ERR_TEXT)
 var READ_RESP_BODY_ERR error = errors.New(constants.READ_RESP_BODY_ERR_TEXT)
+var MAX_REQ_BODY_SIZE_ERR error = errors.New(constants.MAX_REQ_BODY_SIZE_ERR_TEXT)
 
 func responseWith(respText string, w http.ResponseWriter, statusCode int) {
 	w.Header().Set("Content-Length", strconv.Itoa(len(respText)))
@@ -36,6 +37,8 @@ func handleCancel(cause error, w http.ResponseWriter) {
 		responseWith(cause.Error(), w, http.StatusBadRequest)
 	case READ_RESP_BODY_ERR:
 		responseWith(cause.Error(), w, http.StatusInternalServerError)
+	case MAX_REQ_BODY_SIZE_ERR:
+		responseWith(cause.Error(), w, http.StatusRequestEntityTooLarge)
 	}
 }
 
@@ -80,6 +83,10 @@ func serializeRequest(ctx context.Context, r *http.Request, cancel context.Cance
 		r, readErr := r.Body.Read(buf)
 		readBufferTimeout.Stop()
 		contentLength += r
+		if contentLength > constants.MAX_REQ_BODY_SIZE {
+			cancel(MAX_REQ_BODY_SIZE_ERR)
+			return
+		}
 		if readErr != nil {
 			if errors.Is(readErr, io.EOF) {
 				reqBodyBytes = append(reqBodyBytes, buf[:r]...)
