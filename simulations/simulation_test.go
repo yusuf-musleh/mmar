@@ -567,13 +567,12 @@ func verifyDevServerReturningInvalidRespHandled(t *testing.T, client *http.Clien
 	validateRequestResponse(t, expectedResp, resp, "verifyDevServerReturningInvalidRespHandled")
 }
 
+// Test to verify that mmar timesout if devserver takes too long to respond
 func verifyDevServerLongRunningReqHandledGradefully(t *testing.T, client *http.Client, tunnelUrl string) {
 	req, reqErr := http.NewRequest("GET", tunnelUrl+devserver.LONG_RUNNING_URL, nil)
 	if reqErr != nil {
 		log.Fatalf("Failed to create new request: %v", reqErr)
 	}
-	// Adding custom header to confirm that they are propogated when going through mmar
-	req.Header.Set("Simulation-Test", "verify-long-running-request-handled")
 
 	resp, respErr := client.Do(req)
 	if respErr != nil {
@@ -592,6 +591,32 @@ func verifyDevServerLongRunningReqHandledGradefully(t *testing.T, client *http.C
 	}
 
 	validateRequestResponse(t, expectedResp, resp, "verifyDevServerLongRunningReqHandledGradefully")
+}
+
+// Test to verify that mmar handles crashes in the devserver gracefully
+func verifyDevServerCrashHandledGracefully(t *testing.T, client *http.Client, tunnelUrl string) {
+	req, reqErr := http.NewRequest("GET", tunnelUrl+devserver.CRASH_URL, nil)
+	if reqErr != nil {
+		log.Fatalf("Failed to create new request: %v", reqErr)
+	}
+
+	resp, respErr := client.Do(req)
+	if respErr != nil {
+		log.Printf("Failed to get response: %v", respErr)
+	}
+
+	expectedBody := constants.LOCALHOST_NOT_RUNNING_ERR_TEXT
+
+	expectedResp := expectedResponse{
+		statusCode: http.StatusOK,
+		headers: map[string]string{
+			"Content-Length": strconv.Itoa(len(expectedBody)),
+			"Content-Type":   "text/plain; charset=utf-8",
+		},
+		textBody: expectedBody,
+	}
+
+	validateRequestResponse(t, expectedResp, resp, "verifyDevServerCrashHandledGracefully")
 }
 
 func TestSimulation(t *testing.T) {
@@ -632,6 +657,7 @@ func TestSimulation(t *testing.T) {
 	verifyRequestWithVeryLargeBody(t, client, tunnelUrl)
 	verifyDevServerReturningInvalidRespHandled(t, client, tunnelUrl)
 	verifyDevServerLongRunningReqHandledGradefully(t, client, tunnelUrl)
+	verifyDevServerCrashHandledGracefully(t, client, tunnelUrl)
 
 	// Stop simulation tests
 	simulationCancel()

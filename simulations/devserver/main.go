@@ -17,6 +17,7 @@ const (
 	POST_FAILURE_URL = "/post-fail"
 	BAD_RESPONSE_URL = "/bad-resp"
 	LONG_RUNNING_URL = "/long-running"
+	CRASH_URL        = "/crash"
 )
 
 type DevServer struct {
@@ -46,6 +47,7 @@ func setupMux() *http.ServeMux {
 	mux.Handle(POST_FAILURE_URL, http.HandlerFunc(handlePostFail))
 	mux.Handle(BAD_RESPONSE_URL, http.HandlerFunc(handleBadResp))
 	mux.Handle(LONG_RUNNING_URL, http.HandlerFunc(handleLongRunningReq))
+	mux.Handle(CRASH_URL, http.HandlerFunc(handleCrashingReq))
 
 	return mux
 }
@@ -174,7 +176,7 @@ func handleBadResp(w http.ResponseWriter, r *http.Request) {
 	w.Write(respBody)
 }
 
-// Request handle that takes a long time before returning response
+// Request handler that takes a long time before returning response
 func handleLongRunningReq(w http.ResponseWriter, r *http.Request) {
 	// Include echo of request headers in response to confirm they were received
 	respBody, err := json.Marshal(map[string]interface{}{
@@ -198,4 +200,9 @@ func handleLongRunningReq(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Simulation-Header", "devserver-handle-long-running")
 	w.WriteHeader(http.StatusOK)
 	w.Write(respBody)
+}
+
+// Request handler that crashes the dev server
+func handleCrashingReq(w http.ResponseWriter, _ *http.Request) {
+	panic("crashing devserver")
 }
