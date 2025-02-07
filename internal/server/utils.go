@@ -18,6 +18,8 @@ var READ_BODY_CHUNK_TIMEOUT_ERR error = errors.New(constants.READ_BODY_CHUNK_TIM
 var CLIENT_DISCONNECTED_ERR error = errors.New(constants.CLIENT_DISCONNECT_ERR_TEXT)
 var READ_RESP_BODY_ERR error = errors.New(constants.READ_RESP_BODY_ERR_TEXT)
 var MAX_REQ_BODY_SIZE_ERR error = errors.New(constants.MAX_REQ_BODY_SIZE_ERR_TEXT)
+var FAILED_TO_FORWARD_TO_MMAR_CLIENT_ERR error = errors.New(constants.FAILED_TO_FORWARD_TO_MMAR_CLIENT_ERR_TEXT)
+var FAILED_TO_READ_RESP_FROM_MMAR_CLIENT_ERR error = errors.New(constants.FAILED_TO_READ_RESP_FROM_MMAR_CLIENT_ERR_TEXT)
 
 func responseWith(respText string, w http.ResponseWriter, statusCode int) {
 	w.Header().Set("Content-Length", strconv.Itoa(len(respText)))

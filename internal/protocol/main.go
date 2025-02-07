@@ -5,14 +5,15 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/yusuf-musleh/mmar/constants"
+	"github.com/yusuf-musleh/mmar/internal/logger"
 )
 
 const (
@@ -92,8 +93,8 @@ func (tm *TunnelMessage) serializeMessage() ([]byte, error) {
 	// Determine and validate message type to add prefix
 	msgType, err := isValidTunnelMessageType(tm.MsgType)
 	if err != nil {
-		// TODO: Gracefully handle non-protocol message received
-		log.Fatalf("Invalid TunnelMessage type: %v:", tm.MsgType)
+		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Invalid TunnelMessage type: %v:", tm.MsgType))
+		return []byte{}, err
 	}
 
 	// Add version of TunnelMessage protocol and TunnelMessage type
@@ -115,14 +116,15 @@ func (tm *TunnelMessage) serializeMessage() ([]byte, error) {
 	return bytes.Join(serializedMsg, nil), nil
 }
 
-func (tm *TunnelMessage) readMessageData(length int, reader *bufio.Reader) []byte {
+func (tm *TunnelMessage) readMessageData(length int, reader *bufio.Reader) ([]byte, error) {
 	msgData := make([]byte, length)
 
 	if _, err := io.ReadFull(reader, msgData); err != nil {
-		log.Fatalf("Failed to read all Msg Data: %v", err)
+		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to read all Msg Data: %v", err))
+		return []byte{}, err
 	}
 
-	return msgData
+	return msgData, nil
 }
 
 func (tm *TunnelMessage) deserializeMessage(reader *bufio.Reader) error {
@@ -143,8 +145,8 @@ func (tm *TunnelMessage) deserializeMessage(reader *bufio.Reader) error {
 
 	msgType, err := isValidTunnelMessageType(msgPrefix)
 	if err != nil {
-		// TODO: Gracefully handle non-protocol message received
-		log.Fatalf("Invalid TunnelMessage prefix: %v", msgPrefix)
+		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Invalid TunnelMessage prefix: %v", msgPrefix))
+		return err
 	}
 
 	msgLengthStr, err := reader.ReadString('\n')
@@ -155,11 +157,14 @@ func (tm *TunnelMessage) deserializeMessage(reader *bufio.Reader) error {
 	// Determine the length of the data by stripping out the '\n' and convert to int
 	msgLength, err := strconv.Atoi(msgLengthStr[:len(msgLengthStr)-1])
 	if err != nil {
-		// TODO: Gracefully handle invalid message data length
-		log.Fatalf("Could not parse message length: %v", msgLengthStr)
+		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Could not parse message length: %v", msgLengthStr))
+		return err
 	}
 
-	msgData := tm.readMessageData(msgLength, reader)
+	msgData, readErr := tm.readMessageData(msgLength, reader)
+	if readErr != nil {
+		return readErr
+	}
 
 	tm.MsgType = msgType
 	tm.MsgData = msgData

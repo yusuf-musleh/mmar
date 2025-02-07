@@ -148,7 +148,9 @@ func (ms *MmarServer) handleServerStats(w http.ResponseWriter, r *http.Request) 
 	marshalledStats, err := json.Marshal(stats)
 
 	if err != nil {
-		log.Fatalf("Failed to marshal server stats: %v", err)
+		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to marshal server stats: %v", err))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 	w.WriteHeader(http.StatusOK)
 	w.Write(marshalledStats)
@@ -274,7 +276,7 @@ func (ms *MmarServer) newClientTunnel(conn net.Conn) (*ClientTunnel, error) {
 	if limitedIP {
 		limitMessage := protocol.TunnelMessage{MsgType: protocol.CLIENT_TUNNEL_LIMIT}
 		if err := clientTunnel.SendMessage(limitMessage); err != nil {
-			log.Fatal(err)
+			logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to send Tunnel Limit msg to client: %v", err))
 		}
 		clientTunnel.close(false)
 		// Release lock once errored
@@ -292,9 +294,10 @@ func (ms *MmarServer) newClientTunnel(conn net.Conn) (*ClientTunnel, error) {
 	ms.mu.Unlock()
 
 	// Send unique ID to client
-	reqMessage := protocol.TunnelMessage{MsgType: protocol.CLIENT_CONNECT, MsgData: []byte(uniqueId)}
-	if err := clientTunnel.SendMessage(reqMessage); err != nil {
-		log.Fatal(err)
+	connMessage := protocol.TunnelMessage{MsgType: protocol.CLIENT_CONNECT, MsgData: []byte(uniqueId)}
+	if err := clientTunnel.SendMessage(connMessage); err != nil {
+		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to send unique ID msg to client: %v", err))
+		return nil, err
 	}
 
 	return &clientTunnel, nil
@@ -310,7 +313,8 @@ func (ms *MmarServer) handleTcpConnection(conn net.Conn) {
 			conn.Close()
 			return
 		}
-		log.Fatalf("Failed to create ClientTunnel: %v", err)
+		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to create ClientTunnel: %v", err))
+		return
 	}
 
 	logger.Log(
@@ -358,7 +362,9 @@ func (ms *MmarServer) processTunneledRequestsForClient(ct *ClientTunnel) {
 		// Forward the request to mmar client
 		reqMessage := protocol.TunnelMessage{MsgType: protocol.REQUEST, MsgData: incomingReq.serializedReq}
 		if err := ct.SendMessage(reqMessage); err != nil {
-			log.Fatal(err)
+			logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to send Request msg to client: %v", err))
+			incomingReq.cancel(FAILED_TO_FORWARD_TO_MMAR_CLIENT_ERR)
+			continue
 		}
 
 		// Wait for response for this request to come back from outgoing channel
@@ -378,9 +384,10 @@ func (ms *MmarServer) processTunneledRequestsForClient(ct *ClientTunnel) {
 				ms.closeClientTunnel(ct)
 				return
 			}
-			// TODO: Needs to be cleaned up/refactored
 			failedReq := fmt.Sprintf("%s - %s%s", incomingReq.request.Method, html.EscapeString(incomingReq.request.URL.Path), incomingReq.request.URL.RawQuery)
-			log.Fatalf("Failed to return response: %v\n\n for req: %v", respErr, failedReq)
+			logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to return response: %v\n\n for req: %v", respErr, failedReq))
+			incomingReq.cancel(FAILED_TO_READ_RESP_FROM_MMAR_CLIENT_ERR)
+			continue
 		}
 
 		respBody, respBodyErr := io.ReadAll(resp.Body)
@@ -416,7 +423,8 @@ func (ms *MmarServer) processTunnelMessages(ct *ClientTunnel) {
 	for {
 		tunnelMsg, err := ct.ReceiveMessage()
 		if err != nil {
-			log.Fatalf("Failed to receive message from client tunnel: %v", err)
+			logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Receive Message from client tunnel errored: %v", err))
+			continue
 		}
 
 		switch tunnelMsg.MsgType {
@@ -490,9 +498,10 @@ func Run(config ConfigOptions) {
 		for {
 			conn, err := ln.Accept()
 			if err != nil {
-				log.Fatalf("Failed to accept TCP connection: %v", err)
+				logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to accept TCP connection: %v", err))
+			} else {
+				go mmarServer.handleTcpConnection(conn)
 			}
-			go mmarServer.handleTcpConnection(conn)
 		}
 	}()
 

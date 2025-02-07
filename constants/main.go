@@ -34,13 +34,15 @@ const (
 	DEST_REQUEST_TIMEOUT        = 30
 	MAX_REQ_BODY_SIZE           = 10000000 // 10mb
 
-	CLIENT_DISCONNECT_ERR_TEXT       = "Tunnel is closed, cannot connect to mmar client."
-	LOCALHOST_NOT_RUNNING_ERR_TEXT   = "Tunneled successfully, but nothing is running on localhost."
-	DEST_REQUEST_TIMEDOUT_ERR_TEXT   = "Destination server took too long to respond"
-	READ_BODY_CHUNK_ERR_TEXT         = "Error reading request body"
-	READ_BODY_CHUNK_TIMEOUT_ERR_TEXT = "Timeout reading request body"
-	READ_RESP_BODY_ERR_TEXT          = "Could not read response from destination server, check your server's logs for any errors."
-	MAX_REQ_BODY_SIZE_ERR_TEXT       = "Request too large"
+	CLIENT_DISCONNECT_ERR_TEXT                    = "Tunnel is closed, cannot connect to mmar client."
+	LOCALHOST_NOT_RUNNING_ERR_TEXT                = "Tunneled successfully, but nothing is running on localhost."
+	DEST_REQUEST_TIMEDOUT_ERR_TEXT                = "Destination server took too long to respond"
+	READ_BODY_CHUNK_ERR_TEXT                      = "Error reading request body"
+	READ_BODY_CHUNK_TIMEOUT_ERR_TEXT              = "Timeout reading request body"
+	READ_RESP_BODY_ERR_TEXT                       = "Could not read response from destination server, check your server's logs for any errors."
+	MAX_REQ_BODY_SIZE_ERR_TEXT                    = "Request too large"
+	FAILED_TO_FORWARD_TO_MMAR_CLIENT_ERR_TEXT     = "Failed to forward request to mmar client"
+	FAILED_TO_READ_RESP_FROM_MMAR_CLIENT_ERR_TEXT = "Fail to read response from mmad client"
 
 	// TERMINAL ANSI ESCAPED COLORS
 	DEFAULT_COLOR = ""

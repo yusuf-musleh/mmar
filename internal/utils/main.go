@@ -5,7 +5,6 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"strings"
@@ -55,13 +54,13 @@ Usage:
 }
 
 // Decode hash string to bytes so it can be compared
-func decodeHash(hashStr string) []byte {
+func decodeHash(hashStr string) ([]byte, error) {
 	dst := make([]byte, hex.DecodedLen(len([]byte(hashStr))))
 	n, err := hex.Decode(dst, []byte(hashStr))
 	if err != nil {
-		log.Fatalf("Could not decode hash string: %v", err)
+		return []byte{}, err
 	}
-	return dst[:n]
+	return dst[:n], nil
 }
 
 // Check if provided Basic Auth credentials are valid
@@ -74,7 +73,11 @@ func ValidCredentials(username string, password string) bool {
 	envUsernameHash, foundUsernameHash := os.LookupEnv("USERNAME_HASH")
 	var usernameDecodedHash []byte
 	if foundUsernameHash {
-		usernameDecodedHash = decodeHash(envUsernameHash)
+		var decodeErr error
+		usernameDecodedHash, decodeErr = decodeHash(envUsernameHash)
+		if decodeErr != nil {
+			return false
+		}
 	} else {
 		// Fallback to default if not set
 		defaultUsernameHash := sha256.Sum256([]byte(constants.SERVER_STATS_DEFAULT_USERNAME))
@@ -85,7 +88,11 @@ func ValidCredentials(username string, password string) bool {
 	envPasswordHash, foundPasswordHash := os.LookupEnv("PASSWORD_HASH")
 	var passwordDecodedHash []byte
 	if foundPasswordHash {
-		passwordDecodedHash = decodeHash(envPasswordHash)
+		var decodeErr error
+		passwordDecodedHash, decodeErr = decodeHash(envPasswordHash)
+		if decodeErr != nil {
+			return false
+		}
 	} else {
 		// Fallback to default if not set
 		defaultPasswordHash := sha256.Sum256([]byte(constants.SERVER_STATS_DEFAULT_PASSWORD))
