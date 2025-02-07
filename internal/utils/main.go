@@ -15,7 +15,7 @@ import (
 
 func ExtractSubdomain(host string) string {
 	splitDomain := strings.Split(host, ".")
-	subdomains := splitDomain[:len(splitDomain)-1]
+	subdomains := splitDomain[:1]
 	return strings.ToLower(strings.Join(subdomains, "."))
 }
 
