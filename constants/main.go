@@ -9,7 +9,8 @@ const (
 	CLIENT_LOCAL_PORT = "8000"
 	SERVER_HTTP_PORT  = "3376"
 	SERVER_TCP_PORT   = "6673"
-	TUNNEL_HOST       = "https://mmar.dev"
+	TUNNEL_HOST       = "mmar.dev"
+	TUNNEL_HTTP_PORT  = "443"
 
 	SERVER_STATS_DEFAULT_USERNAME = "admin"
 	SERVER_STATS_DEFAULT_PASSWORD = "admin"

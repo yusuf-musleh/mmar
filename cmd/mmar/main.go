@@ -25,7 +25,7 @@ func main() {
 		"local-port", constants.CLIENT_LOCAL_PORT, constants.CLIENT_LOCAL_PORT_HELP,
 	)
 	clientTunnelHttpPort := clientCmd.String(
-		"tunnel-http-port", constants.SERVER_HTTP_PORT, constants.CLIENT_HTTP_PORT_HELP,
+		"tunnel-http-port", constants.TUNNEL_HTTP_PORT, constants.CLIENT_HTTP_PORT_HELP,
 	)
 	clientTunnelTcpPort := clientCmd.String(
 		"tunnel-tcp-port", constants.SERVER_TCP_PORT, constants.CLIENT_TCP_PORT_HELP,

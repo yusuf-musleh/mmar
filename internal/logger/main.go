@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"fmt"
 	"html"
 	"log"
 	"net/http"
@@ -137,18 +138,27 @@ func LogStartMmarServer(tcpPort string, httpPort string) {
 func LogStartMmarClient(tunnelHost string, tunnelTcpPort string, tunnelHttpPort string, localPort string) {
 	logStr := `Starting %s...
   Creating tunnel:
-    Tunnel Host: %s
-    Tunnel TCP Port: %s
-    Tunnel HTTP Port: %s
+    Tunnel Host: %s%s%s
     Local Port: %s
 
 `
+
+	tunnelTcpPortStr := ""
+	if tunnelTcpPort != constants.SERVER_TCP_PORT {
+		tunnelTcpPortStr = fmt.Sprintf("\n    Tunnel TCP Port: %s", ColorLogStr(constants.BLUE, tunnelTcpPort))
+	}
+
+	tunnelHttpPortStr := ""
+	if tunnelHttpPort != constants.TUNNEL_HTTP_PORT {
+		tunnelHttpPortStr = fmt.Sprintf("\n    Tunnel HTTP Port: %s", ColorLogStr(constants.BLUE, tunnelHttpPort))
+	}
+
 	log.Printf(
 		logStr,
 		ColorLogStr(constants.BLUE, "mmar client"),
 		ColorLogStr(constants.BLUE, tunnelHost),
-		ColorLogStr(constants.BLUE, tunnelTcpPort),
-		ColorLogStr(constants.BLUE, tunnelHttpPort),
+		tunnelTcpPortStr,
+		tunnelHttpPortStr,
 		ColorLogStr(constants.BLUE, localPort),
 	)
 }
@@ -158,15 +168,29 @@ func LogTunnelCreated(subdomain string, tunnelHost string, tunnelHttpPort string
 
 A mmar tunnel is now open on:
 
->>>  http://%s.%s:%s %s http://localhost:%s
+>>>  %s://%s.%s%s %s http://localhost:%s
 
 `
+	httpProtocol := "https"
+	tunnelHttpPortStr := ""
+	if tunnelHost == "localhost" {
+		httpProtocol = "http"
+		if tunnelHttpPort == constants.TUNNEL_HTTP_PORT {
+			tunnelHttpPort = constants.SERVER_HTTP_PORT
+		}
+	}
+
+	if tunnelHttpPort != constants.TUNNEL_HTTP_PORT {
+		tunnelHttpPortStr = ":" + tunnelHttpPort
+	}
+
 	log.Printf(
 		logStr,
 		ColorLogStr(constants.GREEN, "Tunnel created successfully!"),
+		httpProtocol,
 		subdomain,
 		tunnelHost,
-		tunnelHttpPort,
+		tunnelHttpPortStr,
 		ColorLogStr(constants.GREEN, "->"),
 		localPort,
 	)
