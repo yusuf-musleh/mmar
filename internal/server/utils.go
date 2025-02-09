@@ -41,6 +41,8 @@ func handleCancel(cause error, w http.ResponseWriter) {
 		responseWith(cause.Error(), w, http.StatusInternalServerError)
 	case MAX_REQ_BODY_SIZE_ERR:
 		responseWith(cause.Error(), w, http.StatusRequestEntityTooLarge)
+	case FAILED_TO_FORWARD_TO_MMAR_CLIENT_ERR, FAILED_TO_READ_RESP_FROM_MMAR_CLIENT_ERR:
+		responseWith(cause.Error(), w, http.StatusServiceUnavailable)
 	}
 }
 
