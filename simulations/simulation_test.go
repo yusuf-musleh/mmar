@@ -744,29 +744,45 @@ func TestSimulation(t *testing.T) {
 	client := httpClient()
 
 	var wg sync.WaitGroup
-	wg.Add(16)
 
-	// Perform simulated usage tests
-	go verifyGetRequestSuccess(t, client, tunnelUrl, &wg)
-	go verifyGetRequestFail(t, client, tunnelUrl, &wg)
-	go verifyPostRequestSuccess(t, client, tunnelUrl, &wg)
-	go verifyPostRequestFail(t, client, tunnelUrl, &wg)
-	go verifyRedirectsHandled(t, client, tunnelUrl, &wg)
+	simulationTests := []func(t *testing.T, client *http.Client, tunnelUrl string, wg *sync.WaitGroup){
+		// Perform simulated usage tests
+		verifyGetRequestSuccess,
+		verifyGetRequestFail,
+		verifyPostRequestSuccess,
+		verifyPostRequestFail,
+		verifyRedirectsHandled,
 
-	// Perform Invalid HTTP requests to test durability of mmar
-	go verifyInvalidMethodRequestHandled(t, client, tunnelUrl, &wg)
-	go verifyInvalidHeadersRequestHandled(t, tunnelUrl, &wg)
-	go verifyInvalidHttpVersionRequestHandled(t, tunnelUrl, &wg)
-	go verifyInvalidContentLengthRequestHandled(t, tunnelUrl, &wg)
-	go verifyMismatchedContentLengthRequestHandled(t, tunnelUrl, &wg)
-	go verifyContentLengthWithNoBodyRequestHandled(t, tunnelUrl, &wg)
-	go verifyRequestWithLargeBody(t, client, tunnelUrl, &wg)
+		// Perform Invalid HTTP requests to test durability of mmar
+		verifyInvalidMethodRequestHandled,
+		verifyRequestWithLargeBody,
 
-	// Perform edge case usage tests
-	go verifyRequestWithVeryLargeBody(t, client, tunnelUrl, &wg)
-	go verifyDevServerReturningInvalidRespHandled(t, client, tunnelUrl, &wg)
-	go verifyDevServerLongRunningReqHandledGradefully(t, client, tunnelUrl, &wg)
-	go verifyDevServerCrashHandledGracefully(t, client, tunnelUrl, &wg)
+		// Perform edge case usage tests
+		verifyRequestWithVeryLargeBody,
+		verifyDevServerReturningInvalidRespHandled,
+		verifyDevServerLongRunningReqHandledGradefully,
+		verifyDevServerCrashHandledGracefully,
+	}
+
+	// Tests that require more control hence don't use the built in go http.client
+	manualClientSimulationTests := []func(t *testing.T, tunnelUrl string, wg *sync.WaitGroup){
+		// Perform Invalid HTTP requests to test durability of mmar
+		verifyInvalidHeadersRequestHandled,
+		verifyInvalidHttpVersionRequestHandled,
+		verifyInvalidContentLengthRequestHandled,
+		verifyMismatchedContentLengthRequestHandled,
+		verifyContentLengthWithNoBodyRequestHandled,
+	}
+
+	for _, simTest := range simulationTests {
+		wg.Add(1)
+		go simTest(t, client, tunnelUrl, &wg)
+	}
+
+	for _, manualClientSimTest := range manualClientSimulationTests {
+		wg.Add(1)
+		go manualClientSimTest(t, tunnelUrl, &wg)
+	}
 
 	wg.Wait()
 
