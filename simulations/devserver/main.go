@@ -15,6 +15,7 @@ const (
 	GET_FAILURE_URL  = "/get-fail"
 	POST_SUCCESS_URL = "/post"
 	POST_FAILURE_URL = "/post-fail"
+	REDIRECT_URL     = "/redirect"
 	BAD_RESPONSE_URL = "/bad-resp"
 	LONG_RUNNING_URL = "/long-running"
 	CRASH_URL        = "/crash"
@@ -45,6 +46,7 @@ func setupMux() *http.ServeMux {
 	mux.Handle(GET_FAILURE_URL, http.HandlerFunc(handleGetFail))
 	mux.Handle(POST_SUCCESS_URL, http.HandlerFunc(handlePost))
 	mux.Handle(POST_FAILURE_URL, http.HandlerFunc(handlePostFail))
+	mux.Handle(REDIRECT_URL, http.HandlerFunc(handleRedirect))
 	mux.Handle(BAD_RESPONSE_URL, http.HandlerFunc(handleBadResp))
 	mux.Handle(LONG_RUNNING_URL, http.HandlerFunc(handleLongRunningReq))
 	mux.Handle(CRASH_URL, http.HandlerFunc(handleCrashingReq))
@@ -157,6 +159,11 @@ func handlePostFail(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Simulation-Header", "devserver-handle-post-fail")
 	w.WriteHeader(http.StatusBadRequest)
 	w.Write(respBody)
+}
+
+// Request handler that returns a redirect
+func handleRedirect(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, GET_SUCCESS_URL, http.StatusFound)
 }
 
 // Request handler that returns an invalid HTTP response

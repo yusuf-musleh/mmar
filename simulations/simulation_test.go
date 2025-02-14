@@ -291,6 +291,59 @@ func verifyPostRequestFail(t *testing.T, client *http.Client, tunnelUrl string, 
 	validateRequestResponse(t, expectedResp, resp, "verifyPostRequestFail")
 }
 
+// Test to verify redirects works as expected
+func verifyRedirectsHandled(t *testing.T, client *http.Client, tunnelUrl string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	reqBody := map[string]interface{}{
+		"success": true,
+		"payload": map[string]interface{}{
+			"some":     "data",
+			"moreData": 123,
+		},
+	}
+	serializedReqBody, _ := json.Marshal(reqBody)
+	req, reqErr := http.NewRequest("POST", tunnelUrl+devserver.REDIRECT_URL, bytes.NewBuffer(serializedReqBody))
+	if reqErr != nil {
+		log.Fatalf("Failed to create new request: %v", reqErr)
+	}
+
+	// Adding custom header to confirm that they are propogated when going through mmar
+	req.Header.Set("Simulation-Test", "verify-redirect-request")
+
+	resp, respErr := client.Do(req)
+	if respErr != nil {
+		log.Printf("Failed to get response: %v", respErr)
+	}
+
+	expectedReqHeaders := map[string][]string{
+		"User-Agent":      {"Go-http-client/1.1"}, // Default header in golang client
+		"Accept-Encoding": {"gzip"},               // Default header in golang client
+		"Simulation-Test": {"verify-redirect-request"},
+		"Referer":         {tunnelUrl + "/redirect"}, // Include referer header since it redirects
+	}
+
+	expectedBody := map[string]interface{}{
+		"success": true,
+		"data":    "some data",
+		"echo": map[string]interface{}{
+			"reqHeaders": expectedReqHeaders,
+		},
+	}
+	marshaledBody, _ := json.Marshal(expectedBody)
+
+	expectedResp := expectedResponse{
+		statusCode: http.StatusOK,
+		headers: map[string]string{
+			"Content-Length":    strconv.Itoa(len(marshaledBody)),
+			"Content-Type":      "application/json",
+			"Simulation-Header": "devserver-handle-get",
+		},
+		jsonBody: expectedBody,
+	}
+
+	validateRequestResponse(t, expectedResp, resp, "verifyRedirectsHandled")
+}
+
 // Test to verify a HTTP request with an invalid method is handled
 func verifyInvalidMethodRequestHandled(t *testing.T, client *http.Client, tunnelUrl string, wg *sync.WaitGroup) {
 	defer wg.Done()
@@ -691,13 +744,14 @@ func TestSimulation(t *testing.T) {
 	client := httpClient()
 
 	var wg sync.WaitGroup
-	wg.Add(15)
+	wg.Add(16)
 
 	// Perform simulated usage tests
 	go verifyGetRequestSuccess(t, client, tunnelUrl, &wg)
 	go verifyGetRequestFail(t, client, tunnelUrl, &wg)
 	go verifyPostRequestSuccess(t, client, tunnelUrl, &wg)
 	go verifyPostRequestFail(t, client, tunnelUrl, &wg)
+	go verifyRedirectsHandled(t, client, tunnelUrl, &wg)
 
 	// Perform Invalid HTTP requests to test durability of mmar
 	go verifyInvalidMethodRequestHandled(t, client, tunnelUrl, &wg)
