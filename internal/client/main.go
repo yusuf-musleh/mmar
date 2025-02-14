@@ -51,6 +51,10 @@ func (mc *MmarClient) localizeRequest(request *http.Request) {
 func (mc *MmarClient) handleRequestMessage(tunnelMsg protocol.TunnelMessage) {
 	fwdClient := &http.Client{
 		Timeout: constants.DEST_REQUEST_TIMEOUT * time.Second,
+		// Do not follow redirects, let the end-user's client handle it
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 
 	reqReader := bufio.NewReader(bytes.NewReader(tunnelMsg.MsgData))
