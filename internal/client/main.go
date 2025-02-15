@@ -113,11 +113,6 @@ func (mc *MmarClient) ProcessTunnelMessages(ctx context.Context) {
 		case <-ctx.Done(): // Client gracefully shutdown
 			return
 		default:
-			// Set read deadline to half the graceful shutdown timeout to
-			// allow detections of graceful shutdowns
-			readDeadline := time.Now().Add((constants.GRACEFUL_SHUTDOWN_TIMEOUT / 2) * time.Second)
-			mc.Tunnel.Conn.SetReadDeadline(readDeadline)
-
 			tunnelMsg, err := mc.ReceiveMessage()
 			if err != nil {
 				if errors.Is(err, io.EOF) {
