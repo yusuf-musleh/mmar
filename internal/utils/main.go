@@ -4,10 +4,13 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strings"
+	"syscall"
 
 	"github.com/yusuf-musleh/mmar/constants"
 )
@@ -103,4 +106,11 @@ func ValidCredentials(username string, password string) bool {
 	validUsername := subtle.ConstantTimeCompare(usernameHash[:], usernameDecodedHash) == 1
 	validPassword := subtle.ConstantTimeCompare(passwordHash[:], passwordDecodedHash) == 1
 	return validUsername && validPassword
+}
+
+func NetworkError(err error) bool {
+	return errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, net.ErrClosed) ||
+		errors.Is(err, syscall.ECONNRESET)
 }

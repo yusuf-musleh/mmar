@@ -425,8 +425,9 @@ func (ms *MmarServer) processTunnelMessages(ct *ClientTunnel) {
 		tunnelMsg, err := ct.ReceiveMessage()
 		if err != nil {
 			logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Receive Message from client tunnel errored: %v", err))
-			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, net.ErrClosed) {
+			if utils.NetworkError(err) {
 				// If error with connection, stop processing messages
+				ms.closeClientTunnel(ct)
 				return
 			}
 			continue
