@@ -32,6 +32,7 @@ type MmarClient struct {
 	// Tunnel to Server
 	protocol.Tunnel
 	ConfigOptions
+	subdomain string
 }
 
 func (mc *MmarClient) localizeRequest(request *http.Request) {
@@ -107,6 +108,28 @@ func (mc *MmarClient) handleRequestMessage(tunnelMsg protocol.TunnelMessage) {
 	}
 }
 
+// Keep attempting to reconnect the existing tunnel until successful
+func (mc *MmarClient) reconnectTunnel(ctx context.Context) {
+	for {
+		// If context is cancelled, do not reconnect
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return
+		}
+		logger.Log(constants.DEFAULT_COLOR, "Attempting to reconnect...")
+		conn, err := net.DialTimeout(
+			"tcp",
+			fmt.Sprintf("%s:%s", mc.ConfigOptions.TunnelHost, mc.ConfigOptions.TunnelTcpPort),
+			constants.TUNNEL_CREATE_TIMEOUT*time.Second,
+		)
+		if err != nil {
+			time.Sleep(constants.TUNNEL_RECONNECT_TIMEOUT * time.Second)
+			continue
+		}
+		mc.Tunnel.Conn = conn
+		break
+	}
+}
+
 func (mc *MmarClient) ProcessTunnelMessages(ctx context.Context) {
 	for {
 		select {
@@ -115,21 +138,38 @@ func (mc *MmarClient) ProcessTunnelMessages(ctx context.Context) {
 		default:
 			tunnelMsg, err := mc.ReceiveMessage()
 			if err != nil {
-				if errors.Is(err, io.EOF) {
-					logger.Log(constants.DEFAULT_COLOR, "Tunnel connection closed from Server. Exiting...")
-					os.Exit(0)
-				} else if errors.Is(err, net.ErrClosed) {
-					logger.Log(constants.DEFAULT_COLOR, "Tunnel connection disconnected from Server. Exiting...")
-					os.Exit(0)
+				// If the context was cancelled just return
+				if errors.Is(ctx.Err(), context.Canceled) {
+					return
 				} else if errors.Is(err, os.ErrDeadlineExceeded) {
 					continue
 				}
-				log.Fatalf("Failed to receive message from server tunnel: %v", err)
+
+				logger.Log(constants.DEFAULT_COLOR, "Tunnel connection disconnected.")
+
+				// Keep trying to reconnect
+				mc.reconnectTunnel(ctx)
+
+				continue
 			}
 
 			switch tunnelMsg.MsgType {
 			case protocol.CLIENT_CONNECT:
-				logger.LogTunnelCreated(string(tunnelMsg.MsgData), mc.TunnelHost, mc.TunnelHttpPort, mc.LocalPort)
+				tunnelSubdomain := string(tunnelMsg.MsgData)
+				// If there is an existing subdomain, that means we are reconnecting with an
+				// existing mmar client, try to reclaim the same subdomain
+				if mc.subdomain != "" {
+					reconnectMsg := protocol.TunnelMessage{MsgType: protocol.CLIENT_RECLAIM_SUBDOMAIN, MsgData: []byte(tunnelSubdomain + ":" + mc.subdomain)}
+					mc.subdomain = ""
+					if err := mc.SendMessage(reconnectMsg); err != nil {
+						logger.Log(constants.DEFAULT_COLOR, "Tunnel failed to reconnect. Exiting...")
+						os.Exit(0)
+					}
+					continue
+				} else {
+					mc.subdomain = tunnelSubdomain
+				}
+				logger.LogTunnelCreated(tunnelSubdomain, mc.TunnelHost, mc.TunnelHttpPort, mc.LocalPort)
 			case protocol.CLIENT_TUNNEL_LIMIT:
 				limit := logger.ColorLogStr(
 					constants.RED,
@@ -177,6 +217,7 @@ func Run(config ConfigOptions) {
 	mmarClient := MmarClient{
 		protocol.Tunnel{Conn: conn},
 		config,
+		"",
 	}
 
 	// Create context to cancel running gouroutines when shutting down

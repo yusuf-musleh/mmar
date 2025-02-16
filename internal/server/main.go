@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -465,6 +466,52 @@ func (ms *MmarServer) processTunnelMessages(ct *ClientTunnel) {
 		case protocol.CLIENT_DISCONNECT:
 			ms.closeClientTunnel(ct)
 			return
+		case protocol.CLIENT_RECLAIM_SUBDOMAIN:
+			newAndExistingIDs := strings.Split(string(tunnelMsg.MsgData), ":")
+			newId := newAndExistingIDs[0]
+			existingId := newAndExistingIDs[1]
+
+			// Check if the subdomain has already been taken
+			_, ok := ms.clients[existingId]
+			if ok {
+				// if so, close the tunnel, so the user can create a new one
+				ms.closeClientTunnel(ct)
+				return
+			}
+
+			ct.Tunnel.Id = existingId
+
+			// Add existing client tunnel to clients
+			ms.clients[existingId] = *ct
+
+			// Remove newId tunnel from clients
+			delete(ms.clients, newId)
+
+			// Update the tunnels for the IP
+			clientIP := utils.ExtractIP(ct.Conn.RemoteAddr().String())
+			newIdIndex := slices.Index(ms.tunnelsPerIP[clientIP], newId)
+			if newIdIndex == -1 {
+				ms.tunnelsPerIP[clientIP] = append(ms.tunnelsPerIP[clientIP], existingId)
+			} else {
+				ms.tunnelsPerIP[clientIP][newIdIndex] = existingId
+			}
+
+			connMessage := protocol.TunnelMessage{MsgType: protocol.CLIENT_CONNECT, MsgData: []byte(existingId)}
+			if err := ct.SendMessage(connMessage); err != nil {
+				logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to send unique ID msg to client: %v", err))
+				ms.closeClientTunnel(ct)
+				return
+			}
+
+			logger.Log(
+				constants.DEFAULT_COLOR,
+				fmt.Sprintf(
+					"[%s] Tunnel reclaimed: %s -> %s",
+					newId,
+					ct.Conn.RemoteAddr().String(),
+					existingId,
+				),
+			)
 		}
 	}
 }
