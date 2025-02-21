@@ -55,12 +55,14 @@ func setupMux() *http.ServeMux {
 }
 
 func handleGet(w http.ResponseWriter, r *http.Request) {
-	// Include echo of request headers in response to confirm they were received
+	// Include echo of request headers and query params in response to
+	// confirm they were received
 	respBody, err := json.Marshal(map[string]interface{}{
 		"success": true,
 		"data":    "some data",
 		"echo": map[string]interface{}{
-			"reqHeaders": r.Header,
+			"reqHeaders":     r.Header,
+			"reqQueryParams": r.URL.Query(),
 		},
 	})
 

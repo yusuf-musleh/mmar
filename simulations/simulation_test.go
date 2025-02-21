@@ -107,6 +107,12 @@ func verifyGetRequestSuccess(t *testing.T, client *http.Client, tunnelUrl string
 	// Adding custom header to confirm that they are propogated when going through mmar
 	req.Header.Set("Simulation-Test", "verify-get-request-success")
 
+	// Adding query params to confirm that they get propogated when going through mmar
+	q := req.URL.Query()
+	q.Add("first", "query param")
+	q.Add("second", "param & last")
+	req.URL.RawQuery = q.Encode()
+
 	resp, respErr := client.Do(req)
 	if respErr != nil {
 		log.Printf("Failed to get response: %v", respErr)
@@ -122,7 +128,8 @@ func verifyGetRequestSuccess(t *testing.T, client *http.Client, tunnelUrl string
 		"success": true,
 		"data":    "some data",
 		"echo": map[string]interface{}{
-			"reqHeaders": expectedReqHeaders,
+			"reqHeaders":     expectedReqHeaders,
+			"reqQueryParams": q,
 		},
 	}
 	marshaledBody, _ := json.Marshal(expectedBody)
@@ -326,7 +333,8 @@ func verifyRedirectsHandled(t *testing.T, client *http.Client, tunnelUrl string,
 		"success": true,
 		"data":    "some data",
 		"echo": map[string]interface{}{
-			"reqHeaders": expectedReqHeaders,
+			"reqHeaders":     expectedReqHeaders,
+			"reqQueryParams": map[string][]string{},
 		},
 	}
 	marshaledBody, _ := json.Marshal(expectedBody)
@@ -377,7 +385,8 @@ func verifyInvalidMethodRequestHandled(t *testing.T, client *http.Client, tunnel
 		"success": true,
 		"data":    "some data",
 		"echo": map[string]interface{}{
-			"reqHeaders": expectedReqHeaders,
+			"reqHeaders":     expectedReqHeaders,
+			"reqQueryParams": map[string][]string{},
 		},
 	}
 	marshaledBody, _ := json.Marshal(expectedBody)

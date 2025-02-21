@@ -65,7 +65,7 @@ func serializeRequest(ctx context.Context, r *http.Request, cancel context.Cance
 		fmt.Sprintf(
 			"%v %v %v\nHost: %v\n",
 			r.Method,
-			r.URL.Path,
+			r.RequestURI,
 			r.Proto,
 			r.Host,
 		),
