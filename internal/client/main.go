@@ -136,13 +136,35 @@ func (mc *MmarClient) ProcessTunnelMessages(ctx context.Context) {
 		case <-ctx.Done(): // Client gracefully shutdown
 			return
 		default:
+			// Send heartbeat if nothing has been read for a while
+			receiveMessageTimeout := time.AfterFunc(
+				constants.HEARTBEAT_FROM_CLIENT_TIMEOUT*time.Second,
+				func() {
+					heartbeatMsg := protocol.TunnelMessage{MsgType: protocol.HEARTBEAT_FROM_CLIENT}
+					if err := mc.SendMessage(heartbeatMsg); err != nil {
+						logger.Log(constants.DEFAULT_COLOR, "Failed to send heartbeat. Exiting...")
+						os.Exit(0)
+					}
+					// Set a read timeout, if no response to heartbeat is recieved within that period,
+					// attempt to reconnect to the server
+					readDeadline := time.Now().Add((constants.READ_DEADLINE * time.Second))
+					mc.Tunnel.Conn.SetReadDeadline(readDeadline)
+				},
+			)
+
 			tunnelMsg, err := mc.ReceiveMessage()
+			// If a message is received, stop the receiveMessageTimeout and remove the ReadTimeout
+			// as we do not need to send heartbeat or check connection health in this iteration
+			receiveMessageTimeout.Stop()
+			mc.Tunnel.Conn.SetReadDeadline(time.Time{})
+
 			if err != nil {
 				// If the context was cancelled just return
 				if errors.Is(ctx.Err(), context.Canceled) {
 					return
-				} else if errors.Is(err, os.ErrDeadlineExceeded) {
-					continue
+				} else if errors.Is(err, protocol.INVALID_MESSAGE_PROTOCOL_VERSION) {
+					logger.Log(constants.YELLOW, "The mmar message protocol has been updated, please update mmar.")
+					os.Exit(0)
 				}
 
 				logger.Log(constants.DEFAULT_COLOR, "Tunnel connection disconnected.")
@@ -184,6 +206,15 @@ func (mc *MmarClient) ProcessTunnelMessages(ctx context.Context) {
 				os.Exit(0)
 			case protocol.REQUEST:
 				go mc.handleRequestMessage(tunnelMsg)
+			case protocol.HEARTBEAT_ACK:
+				// Got a heartbeat ack, that means the connection is healthy,
+				// we do not need to perform any action
+			case protocol.HEARTBEAT_FROM_SERVER:
+				heartbeatAckMsg := protocol.TunnelMessage{MsgType: protocol.HEARTBEAT_ACK}
+				if err := mc.SendMessage(heartbeatAckMsg); err != nil {
+					logger.Log(constants.DEFAULT_COLOR, "Failed to send Heartbeat Ack. Exiting...")
+					os.Exit(0)
+				}
 			}
 		}
 	}

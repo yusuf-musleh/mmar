@@ -25,6 +25,9 @@ const (
 	CLIENT_TUNNEL_LIMIT
 	LOCALHOST_NOT_RUNNING
 	DEST_REQUEST_TIMEDOUT
+	HEARTBEAT_FROM_CLIENT
+	HEARTBEAT_FROM_SERVER
+	HEARTBEAT_ACK
 )
 
 var INVALID_MESSAGE_PROTOCOL_VERSION = errors.New("Invalid Message Protocol Version")
@@ -33,7 +36,7 @@ var INVALID_MESSAGE_TYPE = errors.New("Invalid Tunnel Message Type")
 func isValidTunnelMessageType(mt uint8) (uint8, error) {
 	// Iterate through all the message type, from first to last, checking
 	// if the provided message type matches one of them
-	for msgType := REQUEST; msgType <= DEST_REQUEST_TIMEDOUT; msgType++ {
+	for msgType := REQUEST; msgType <= HEARTBEAT_ACK; msgType++ {
 		if mt == msgType {
 			return msgType, nil
 		}

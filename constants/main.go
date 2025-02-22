@@ -23,18 +23,21 @@ const (
 	CLIENT_TCP_PORT_HELP   = "Define port of mmar TCP server for client to connect to, creating a tunnel."
 	TUNNEL_HOST_HELP       = "Define host domain of mmar server for client to connect to."
 
-	TUNNEL_MESSAGE_PROTOCOL_VERSION = 1
+	TUNNEL_MESSAGE_PROTOCOL_VERSION = 2
 	TUNNEL_MESSAGE_DATA_DELIMITER   = '\n'
 	ID_CHARSET                      = "abcdefghijklmnopqrstuvwxyz0123456789"
 	ID_LENGTH                       = 6
 
-	MAX_TUNNELS_PER_IP          = 5
-	TUNNEL_RECONNECT_TIMEOUT    = 3
-	GRACEFUL_SHUTDOWN_TIMEOUT   = 3
-	TUNNEL_CREATE_TIMEOUT       = 3
-	REQ_BODY_READ_CHUNK_TIMEOUT = 3
-	DEST_REQUEST_TIMEOUT        = 30
-	MAX_REQ_BODY_SIZE           = 10000000 // 10mb
+	MAX_TUNNELS_PER_IP            = 5
+	TUNNEL_RECONNECT_TIMEOUT      = 3
+	GRACEFUL_SHUTDOWN_TIMEOUT     = 3
+	TUNNEL_CREATE_TIMEOUT         = 3
+	REQ_BODY_READ_CHUNK_TIMEOUT   = 3
+	DEST_REQUEST_TIMEOUT          = 30
+	HEARTBEAT_FROM_SERVER_TIMEOUT = 5
+	HEARTBEAT_FROM_CLIENT_TIMEOUT = 2
+	READ_DEADLINE                 = 3
+	MAX_REQ_BODY_SIZE             = 10000000 // 10mb
 
 	CLIENT_DISCONNECT_ERR_TEXT                    = "Tunnel is closed, cannot connect to mmar client."
 	LOCALHOST_NOT_RUNNING_ERR_TEXT                = "Tunneled successfully, but nothing is running on localhost."

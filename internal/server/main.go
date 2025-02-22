@@ -422,7 +422,29 @@ func (ms *MmarServer) processTunneledRequestsForClient(ct *ClientTunnel) {
 
 func (ms *MmarServer) processTunnelMessages(ct *ClientTunnel) {
 	for {
+		// Send heartbeat if nothing has been read for a while
+		receiveMessageTimeout := time.AfterFunc(
+			constants.HEARTBEAT_FROM_SERVER_TIMEOUT*time.Second,
+			func() {
+				heartbeatMsg := protocol.TunnelMessage{MsgType: protocol.HEARTBEAT_FROM_SERVER}
+				if err := ct.SendMessage(heartbeatMsg); err != nil {
+					logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to send heartbeat: %v", err))
+					ms.closeClientTunnel(ct)
+					return
+				}
+				// Set a read timeout, if no response to heartbeat is recieved within that period,
+				// that means the client has disconnected
+				readDeadline := time.Now().Add((constants.READ_DEADLINE * time.Second))
+				ct.Tunnel.Conn.SetReadDeadline(readDeadline)
+			},
+		)
+
 		tunnelMsg, err := ct.ReceiveMessage()
+		// If a message is received, stop the receiveMessageTimeout and remove the ReadTimeout
+		// as we do not need to send heartbeat or check connection health in this iteration
+		receiveMessageTimeout.Stop()
+		ct.Tunnel.Conn.SetReadDeadline(time.Time{})
+
 		if err != nil {
 			logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Receive Message from client tunnel errored: %v", err))
 			if utils.NetworkError(err) {
@@ -467,6 +489,16 @@ func (ms *MmarServer) processTunnelMessages(ct *ClientTunnel) {
 		case protocol.CLIENT_DISCONNECT:
 			ms.closeClientTunnel(ct)
 			return
+		case protocol.HEARTBEAT_FROM_CLIENT:
+			heartbeatAckMsg := protocol.TunnelMessage{MsgType: protocol.HEARTBEAT_ACK}
+			if err := ct.SendMessage(heartbeatAckMsg); err != nil {
+				logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to heartbeat ack to client: %v", err))
+				ms.closeClientTunnel(ct)
+				return
+			}
+		case protocol.HEARTBEAT_ACK:
+			// Got a heartbeat ack, that means the connection is healthy,
+			// we do not need to perform any action
 		case protocol.CLIENT_RECLAIM_SUBDOMAIN:
 			newAndExistingIDs := strings.Split(string(tunnelMsg.MsgData), ":")
 			newId := newAndExistingIDs[0]
