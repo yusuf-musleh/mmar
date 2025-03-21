@@ -461,29 +461,13 @@ func (ms *MmarServer) processTunnelMessages(ct *ClientTunnel) {
 		case protocol.LOCALHOST_NOT_RUNNING:
 			// Create a response for Tunnel connected but localhost not running
 			errState := protocol.TunnelErrState(protocol.LOCALHOST_NOT_RUNNING)
-			resp := http.Response{
-				Status:     "200 OK",
-				StatusCode: http.StatusOK,
-				Body:       io.NopCloser(bytes.NewBufferString(errState)),
-			}
-
-			// Writing response to buffer to tunnel it back
-			var responseBuff bytes.Buffer
-			resp.Write(&responseBuff)
+			responseBuff := createSerializedServerResp("200 OK", http.StatusOK, errState)
 			notRunningMsg := protocol.TunnelMessage{MsgType: protocol.RESPONSE, MsgData: responseBuff.Bytes()}
 			ct.outgoingChannel <- notRunningMsg
 		case protocol.DEST_REQUEST_TIMEDOUT:
 			// Create a response for Tunnel connected but localhost took too long to respond
 			errState := protocol.TunnelErrState(protocol.DEST_REQUEST_TIMEDOUT)
-			resp := http.Response{
-				Status:     "200 OK",
-				StatusCode: http.StatusOK,
-				Body:       io.NopCloser(bytes.NewBufferString(errState)),
-			}
-
-			// Writing response to buffer to tunnel it back
-			var responseBuff bytes.Buffer
-			resp.Write(&responseBuff)
+			responseBuff := createSerializedServerResp("200 OK", http.StatusOK, errState)
 			destTimedoutMsg := protocol.TunnelMessage{MsgType: protocol.RESPONSE, MsgData: responseBuff.Bytes()}
 			ct.outgoingChannel <- destTimedoutMsg
 		case protocol.CLIENT_DISCONNECT:
@@ -545,6 +529,12 @@ func (ms *MmarServer) processTunnelMessages(ct *ClientTunnel) {
 					existingId,
 				),
 			)
+		case protocol.INVALID_RESP_FROM_DEST:
+			// Create a response for receiving invalid response from destination server
+			errState := protocol.TunnelErrState(protocol.INVALID_RESP_FROM_DEST)
+			responseBuff := createSerializedServerResp("500 Internal Server Error", http.StatusInternalServerError, errState)
+			invalidRespFromDestMsg := protocol.TunnelMessage{MsgType: protocol.RESPONSE, MsgData: responseBuff.Bytes()}
+			ct.outgoingChannel <- invalidRespFromDestMsg
 		}
 	}
 }

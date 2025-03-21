@@ -170,19 +170,27 @@ func handleRedirect(w http.ResponseWriter, r *http.Request) {
 
 // Request handler that returns an invalid HTTP response
 func handleBadResp(w http.ResponseWriter, r *http.Request) {
-	// Return a response with Content-Length headers that do not match the actual data
-	respBody, err := json.Marshal(map[string]interface{}{
-		"data": "some data",
-	})
-
-	if err != nil {
-		log.Fatalf("Failed to marshal response for GET: %v", err)
+	// Get the underlying connection object
+	// Assert that w supports Hijacking
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		http.Error(w, "Hijacking not supported", http.StatusInternalServerError)
+		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Length", "123") // Content length much larger than actual content
-	w.WriteHeader(http.StatusOK)
-	w.Write(respBody)
+	// Hijack the connection
+	conn, buf, err := hijacker.Hijack()
+	if err != nil {
+		http.Error(w, "Hijacking failed", http.StatusInternalServerError)
+		return
+	}
+	defer conn.Close()
+
+	// Send back an invalid HTTP response
+	buf.WriteString("some random string\r\n" +
+		"\r\n" +
+		"that is not a valid http resp")
+	buf.Flush()
 }
 
 // Request handler that takes a long time before returning response

@@ -23,7 +23,7 @@ const (
 	CLIENT_TCP_PORT_HELP   = "Define port of mmar TCP server for client to connect to, creating a tunnel."
 	TUNNEL_HOST_HELP       = "Define host domain of mmar server for client to connect to."
 
-	TUNNEL_MESSAGE_PROTOCOL_VERSION = 2
+	TUNNEL_MESSAGE_PROTOCOL_VERSION = 3
 	TUNNEL_MESSAGE_DATA_DELIMITER   = '\n'
 	ID_CHARSET                      = "abcdefghijklmnopqrstuvwxyz0123456789"
 	ID_LENGTH                       = 6

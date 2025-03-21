@@ -93,7 +93,11 @@ func (mc *MmarClient) handleRequestMessage(tunnelMsg protocol.TunnelMessage) {
 			return
 		}
 
-		log.Fatalf("Failed to forward: %v", fwdErr)
+		invalidRespFromDestMsg := protocol.TunnelMessage{MsgType: protocol.INVALID_RESP_FROM_DEST}
+		if err := mc.SendMessage(invalidRespFromDestMsg); err != nil {
+			log.Fatal(err)
+		}
+		return
 	}
 
 	logger.LogHTTP(req, resp.StatusCode, resp.ContentLength, false, true)
@@ -118,7 +122,7 @@ func (mc *MmarClient) reconnectTunnel(ctx context.Context) {
 		logger.Log(constants.DEFAULT_COLOR, "Attempting to reconnect...")
 		conn, err := net.DialTimeout(
 			"tcp",
-			fmt.Sprintf("%s:%s", mc.ConfigOptions.TunnelHost, mc.ConfigOptions.TunnelTcpPort),
+			net.JoinHostPort(mc.ConfigOptions.TunnelHost, mc.ConfigOptions.TunnelTcpPort),
 			constants.TUNNEL_CREATE_TIMEOUT*time.Second,
 		)
 		if err != nil {
@@ -229,7 +233,7 @@ func Run(config ConfigOptions) {
 
 	conn, err := net.DialTimeout(
 		"tcp",
-		fmt.Sprintf("%s:%s", config.TunnelHost, config.TunnelTcpPort),
+		net.JoinHostPort(config.TunnelHost, config.TunnelTcpPort),
 		constants.TUNNEL_CREATE_TIMEOUT*time.Second,
 	)
 	if err != nil {

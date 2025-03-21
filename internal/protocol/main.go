@@ -28,6 +28,7 @@ const (
 	HEARTBEAT_FROM_CLIENT
 	HEARTBEAT_FROM_SERVER
 	HEARTBEAT_ACK
+	INVALID_RESP_FROM_DEST
 )
 
 var INVALID_MESSAGE_PROTOCOL_VERSION = errors.New("Invalid Message Protocol Version")
@@ -36,7 +37,7 @@ var INVALID_MESSAGE_TYPE = errors.New("Invalid Tunnel Message Type")
 func isValidTunnelMessageType(mt uint8) (uint8, error) {
 	// Iterate through all the message type, from first to last, checking
 	// if the provided message type matches one of them
-	for msgType := REQUEST; msgType <= HEARTBEAT_ACK; msgType++ {
+	for msgType := REQUEST; msgType <= INVALID_RESP_FROM_DEST; msgType++ {
 		if mt == msgType {
 			return msgType, nil
 		}
@@ -48,9 +49,10 @@ func isValidTunnelMessageType(mt uint8) (uint8, error) {
 func TunnelErrState(errState uint8) string {
 	// TODO: Have nicer/more elaborative error messages/pages
 	errStates := map[uint8]string{
-		CLIENT_DISCONNECT:     constants.CLIENT_DISCONNECT_ERR_TEXT,
-		LOCALHOST_NOT_RUNNING: constants.LOCALHOST_NOT_RUNNING_ERR_TEXT,
-		DEST_REQUEST_TIMEDOUT: constants.DEST_REQUEST_TIMEDOUT_ERR_TEXT,
+		CLIENT_DISCONNECT:      constants.CLIENT_DISCONNECT_ERR_TEXT,
+		LOCALHOST_NOT_RUNNING:  constants.LOCALHOST_NOT_RUNNING_ERR_TEXT,
+		DEST_REQUEST_TIMEDOUT:  constants.DEST_REQUEST_TIMEDOUT_ERR_TEXT,
+		INVALID_RESP_FROM_DEST: constants.READ_RESP_BODY_ERR_TEXT,
 	}
 	fallbackErr := "An error occured while attempting to tunnel."
 

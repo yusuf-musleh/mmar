@@ -21,7 +21,7 @@ var MAX_REQ_BODY_SIZE_ERR error = errors.New(constants.MAX_REQ_BODY_SIZE_ERR_TEX
 var FAILED_TO_FORWARD_TO_MMAR_CLIENT_ERR error = errors.New(constants.FAILED_TO_FORWARD_TO_MMAR_CLIENT_ERR_TEXT)
 var FAILED_TO_READ_RESP_FROM_MMAR_CLIENT_ERR error = errors.New(constants.FAILED_TO_READ_RESP_FROM_MMAR_CLIENT_ERR_TEXT)
 
-func responseWith(respText string, w http.ResponseWriter, statusCode int) {
+func respondWith(respText string, w http.ResponseWriter, statusCode int) {
 	w.Header().Set("Content-Length", strconv.Itoa(len(respText)))
 	w.Header().Set("Connection", "close")
 	w.WriteHeader(statusCode)
@@ -34,15 +34,15 @@ func handleCancel(cause error, w http.ResponseWriter) {
 		// Cancelled, do nothing
 		return
 	case READ_BODY_CHUNK_TIMEOUT_ERR:
-		responseWith(cause.Error(), w, http.StatusRequestTimeout)
+		respondWith(cause.Error(), w, http.StatusRequestTimeout)
 	case READ_BODY_CHUNK_ERR, CLIENT_DISCONNECTED_ERR:
-		responseWith(cause.Error(), w, http.StatusBadRequest)
+		respondWith(cause.Error(), w, http.StatusBadRequest)
 	case READ_RESP_BODY_ERR:
-		responseWith(cause.Error(), w, http.StatusInternalServerError)
+		respondWith(cause.Error(), w, http.StatusInternalServerError)
 	case MAX_REQ_BODY_SIZE_ERR:
-		responseWith(cause.Error(), w, http.StatusRequestEntityTooLarge)
+		respondWith(cause.Error(), w, http.StatusRequestEntityTooLarge)
 	case FAILED_TO_FORWARD_TO_MMAR_CLIENT_ERR, FAILED_TO_READ_RESP_FROM_MMAR_CLIENT_ERR:
-		responseWith(cause.Error(), w, http.StatusServiceUnavailable)
+		respondWith(cause.Error(), w, http.StatusServiceUnavailable)
 	}
 }
 
@@ -118,4 +118,19 @@ func serializeRequest(ctx context.Context, r *http.Request, cancel context.Cance
 
 	// Send serialized request through channel
 	serializedRequestChannel <- requestBuff.Bytes()
+}
+
+// Create HTTP response sent from mmar server to the end-user client
+func createSerializedServerResp(status string, statusCode int, body string) bytes.Buffer {
+	resp := http.Response{
+		Status:     status,
+		StatusCode: statusCode,
+		Body:       io.NopCloser(bytes.NewBufferString(body)),
+	}
+
+	// Writing response to buffer to tunnel it back
+	var responseBuff bytes.Buffer
+	resp.Write(&responseBuff)
+
+	return responseBuff
 }
