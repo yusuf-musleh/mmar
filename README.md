@@ -121,6 +121,19 @@ Commands:
 Run `mmar <command> -h` to get help for a specific command
 ```
 
+### Configuring through Environment Variables
+
+You can define the various mmar command flags in environment variables rather than passing them in with the command. Here are the available environment variables along with the corresponding flags:
+
+```
+MMAR__SERVER_HTTP_PORT     -> mmar server --http-port
+MMAR__SERVER_TCP_PORT      -> mmar server --tcp-port
+MMAR__LOCAL_PORT           -> mmar client --local-port
+MMAR__TUNNEL_HTTP_PORT     -> mmar client --tunnel-http-port
+MMAR__TUNNEL_TCP_PORT      -> mmar client --tunnel-tcp-port
+MMAR__TUNNEL_HOST          -> mmar client --tunnel-host
+```
+
 ## Self-Host
 
 Since everything is open-source, you can easily self-host mmar on your own infrastructure under your own domain.
