@@ -14,24 +14,36 @@ import (
 func main() {
 	serverCmd := flag.NewFlagSet(constants.SERVER_CMD, flag.ExitOnError)
 	serverHttpPort := serverCmd.String(
-		"http-port", constants.SERVER_HTTP_PORT, constants.SERVER_HTTP_PORT_HELP,
+		"http-port",
+		utils.EnvVarOrDefault(constants.MMAR_ENV_VAR_SERVER_HTTP_PORT, constants.SERVER_HTTP_PORT),
+		constants.SERVER_HTTP_PORT_HELP,
 	)
 	serverTcpPort := serverCmd.String(
-		"tcp-port", constants.SERVER_TCP_PORT, constants.SERVER_TCP_PORT_HELP,
+		"tcp-port",
+		utils.EnvVarOrDefault(constants.MMAR_ENV_VAR_SERVER_TCP_PORT, constants.SERVER_TCP_PORT),
+		constants.SERVER_TCP_PORT_HELP,
 	)
 
 	clientCmd := flag.NewFlagSet(constants.CLIENT_CMD, flag.ExitOnError)
 	clientLocalPort := clientCmd.String(
-		"local-port", constants.CLIENT_LOCAL_PORT, constants.CLIENT_LOCAL_PORT_HELP,
+		"local-port",
+		utils.EnvVarOrDefault(constants.MMAR_ENV_VAR_LOCAL_PORT, constants.CLIENT_LOCAL_PORT),
+		constants.CLIENT_LOCAL_PORT_HELP,
 	)
 	clientTunnelHttpPort := clientCmd.String(
-		"tunnel-http-port", constants.TUNNEL_HTTP_PORT, constants.CLIENT_HTTP_PORT_HELP,
+		"tunnel-http-port",
+		utils.EnvVarOrDefault(constants.MMAR_ENV_VAR_TUNNEL_HTTP_PORT, constants.TUNNEL_HTTP_PORT),
+		constants.CLIENT_HTTP_PORT_HELP,
 	)
 	clientTunnelTcpPort := clientCmd.String(
-		"tunnel-tcp-port", constants.SERVER_TCP_PORT, constants.CLIENT_TCP_PORT_HELP,
+		"tunnel-tcp-port",
+		utils.EnvVarOrDefault(constants.MMAR_ENV_VAR_TUNNEL_TCP_PORT, constants.SERVER_TCP_PORT),
+		constants.CLIENT_TCP_PORT_HELP,
 	)
 	clientTunnelHost := clientCmd.String(
-		"tunnel-host", constants.TUNNEL_HOST, constants.TUNNEL_HOST_HELP,
+		"tunnel-host",
+		utils.EnvVarOrDefault(constants.MMAR_ENV_VAR_TUNNEL_HOST, constants.TUNNEL_HOST),
+		constants.TUNNEL_HOST_HELP,
 	)
 
 	versionCmd := flag.NewFlagSet(constants.VERSION_CMD, flag.ExitOnError)

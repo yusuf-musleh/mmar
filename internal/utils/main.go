@@ -115,3 +115,11 @@ func NetworkError(err error) bool {
 		errors.Is(err, syscall.ECONNRESET) ||
 		errors.Is(err, os.ErrDeadlineExceeded)
 }
+
+func EnvVarOrDefault(envVar string, defaultVal string) string {
+	envValue, ok := os.LookupEnv(envVar)
+	if !ok {
+		return defaultVal
+	}
+	return envValue
+}
