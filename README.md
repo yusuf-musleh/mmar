@@ -41,7 +41,15 @@ _p.s. mmar means “corridor” or “pass-through” in Arabic._
 
 ## Installation
 
-### MacOS
+### Linux/MacOS
+
+Install mmar
+
+```sh
+sudo curl -sSL https://raw.githubusercontent.com/yusuf-musleh/mmar/refs/heads/main/install.sh | sh
+```
+
+### MacOS (Homebrew)
 
 Use [Homebrew](https://brew.sh/) to install `mmar` on MacOS:
 
@@ -60,12 +68,8 @@ brew upgrade yusuf-musleh/mmar-tap/mmar
 The fastest way to create a tunnel what is running on your `localhost:8080` using [Docker](https://www.docker.com/) is by running this command:
 
 ```
-docker run --rm --network host ghcr.io/yusuf-musleh/mmar:v0.2.3 client --local-port 8080
+docker run --rm --network host ghcr.io/yusuf-musleh/mmar:v0.2.6 client --local-port 8080
 ```
-
-### Linux
-
-See Docker or Manual installation instructions
 
 ### Windows
 
