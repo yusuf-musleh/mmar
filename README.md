@@ -65,10 +65,10 @@ brew upgrade yusuf-musleh/mmar-tap/mmar
 
 ### Docker
 
-The fastest way to create a tunnel what is running on your `localhost:8080` using [Docker](https://www.docker.com/) is by running this command:
+The fastest way to create a tunnel what is running on your `https://project.test:443` using [Docker](https://www.docker.com/) is by running this command:
 
 ```
-docker run --rm --network host ghcr.io/yusuf-musleh/mmar:v0.2.6 client --local-port 8080
+docker run --rm --network host ghcr.io/yusuf-musleh/mmar:v0.2.6 client --local-proto https --local-host project.test --local-port 443
 ```
 
 ### Windows
@@ -133,6 +133,8 @@ You can define the various mmar command flags in environment variables rather th
 MMAR__SERVER_HTTP_PORT     -> mmar server --http-port
 MMAR__SERVER_TCP_PORT      -> mmar server --tcp-port
 MMAR__LOCAL_PORT           -> mmar client --local-port
+MMAR__LOCAL_HOST           -> mmar client --local-host
+MMAR__LOCAL_PROTO          -> mmar client --local-proto
 MMAR__TUNNEL_HTTP_PORT     -> mmar client --tunnel-http-port
 MMAR__TUNNEL_TCP_PORT      -> mmar client --tunnel-tcp-port
 MMAR__TUNNEL_HOST          -> mmar client --tunnel-host

@@ -3,18 +3,22 @@ package constants
 const (
 	MMAR_VERSION = "0.2.6"
 
-	VERSION_CMD       = "version"
-	SERVER_CMD        = "server"
-	CLIENT_CMD        = "client"
-	CLIENT_LOCAL_PORT = "8000"
-	SERVER_HTTP_PORT  = "3376"
-	SERVER_TCP_PORT   = "6673"
-	TUNNEL_HOST       = "mmar.dev"
-	TUNNEL_HTTP_PORT  = "443"
+	VERSION_CMD        = "version"
+	SERVER_CMD         = "server"
+	CLIENT_CMD         = "client"
+	CLIENT_LOCAL_PORT  = "8000"
+	CLIENT_LOCAL_HOST  = "localhost"
+	CLIENT_LOCAL_PROTO = "http"
+	SERVER_HTTP_PORT   = "3376"
+	SERVER_TCP_PORT    = "6673"
+	TUNNEL_HOST        = "mmar.dev"
+	TUNNEL_HTTP_PORT   = "443"
 
 	MMAR_ENV_VAR_SERVER_HTTP_PORT = "MMAR__SERVER_HTTP_PORT"
 	MMAR_ENV_VAR_SERVER_TCP_PORT  = "MMAR__SERVER_TCP_PORT"
 	MMAR_ENV_VAR_LOCAL_PORT       = "MMAR__LOCAL_PORT"
+	MMAR_ENV_VAR_LOCAL_HOST       = "MMAR__LOCAL_HOST"
+	MMAR_ENV_VAR_LOCAL_PROTO      = "MMAR__LOCAL_PROTO"
 	MMAR_ENV_VAR_TUNNEL_HTTP_PORT = "MMAR__TUNNEL_HTTP_PORT"
 	MMAR_ENV_VAR_TUNNEL_TCP_PORT  = "MMAR__TUNNEL_TCP_PORT"
 	MMAR_ENV_VAR_TUNNEL_HOST      = "MMAR__TUNNEL_HOST"
@@ -25,10 +29,12 @@ const (
 	SERVER_HTTP_PORT_HELP = "Define port where mmar will bind to and run on server for HTTP requests."
 	SERVER_TCP_PORT_HELP  = "Define port where mmar will bind to and run on server for TCP connections."
 
-	CLIENT_LOCAL_PORT_HELP = "Define the port where your local dev server is running to expose through mmar."
-	CLIENT_HTTP_PORT_HELP  = "Define port of mmar HTTP server to make requests through the tunnel."
-	CLIENT_TCP_PORT_HELP   = "Define port of mmar TCP server for client to connect to, creating a tunnel."
-	TUNNEL_HOST_HELP       = "Define host domain of mmar server for client to connect to."
+	CLIENT_LOCAL_PORT_HELP  = "Define the port where your local dev server is running to expose through mmar."
+	CLIENT_LOCAL_HOST_HELP  = "Define the hostname where your local dev server is running to expose through mmar."
+	CLIENT_LOCAL_PROTO_HELP = "Define the protocol where your local dev server is running to expose (http / https)."
+	CLIENT_HTTP_PORT_HELP   = "Define port of mmar HTTP server to make requests through the tunnel."
+	CLIENT_TCP_PORT_HELP    = "Define port of mmar TCP server for client to connect to, creating a tunnel."
+	TUNNEL_HOST_HELP        = "Define host domain of mmar server for client to connect to."
 
 	TUNNEL_MESSAGE_PROTOCOL_VERSION = 3
 	TUNNEL_MESSAGE_DATA_DELIMITER   = '\n'

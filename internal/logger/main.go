@@ -163,12 +163,12 @@ func LogStartMmarClient(tunnelHost string, tunnelTcpPort string, tunnelHttpPort 
 	)
 }
 
-func LogTunnelCreated(subdomain string, tunnelHost string, tunnelHttpPort string, localPort string) {
+func LogTunnelCreated(subdomain string, tunnelHost string, tunnelHttpPort string, localProto string, localHost string, localPort string) {
 	logStr := `%s
 
 A mmar tunnel is now open on:
 
->>>  %s://%s.%s%s %s http://localhost:%s
+>>>  %s://%s.%s%s %s %s://%s:%s
 
 `
 	httpProtocol := "https"
@@ -192,6 +192,8 @@ A mmar tunnel is now open on:
 		tunnelHost,
 		tunnelHttpPortStr,
 		ColorLogStr(constants.GREEN, "->"),
+		localProto,
+		localHost,
 		localPort,
 	)
 }

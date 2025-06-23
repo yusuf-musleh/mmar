@@ -30,6 +30,16 @@ func main() {
 		utils.EnvVarOrDefault(constants.MMAR_ENV_VAR_LOCAL_PORT, constants.CLIENT_LOCAL_PORT),
 		constants.CLIENT_LOCAL_PORT_HELP,
 	)
+	clientLocalHost := clientCmd.String(
+		"local-host",
+		utils.EnvVarOrDefault(constants.MMAR_ENV_VAR_LOCAL_HOST, constants.CLIENT_LOCAL_HOST),
+		constants.CLIENT_LOCAL_HOST_HELP,
+	)
+	clientLocalProto := clientCmd.String(
+		"local-proto",
+		utils.EnvVarOrDefault(constants.MMAR_ENV_VAR_LOCAL_PROTO, constants.CLIENT_LOCAL_PROTO),
+		constants.CLIENT_LOCAL_PROTO_HELP,
+	)
 	clientTunnelHttpPort := clientCmd.String(
 		"tunnel-http-port",
 		utils.EnvVarOrDefault(constants.MMAR_ENV_VAR_TUNNEL_HTTP_PORT, constants.TUNNEL_HTTP_PORT),
@@ -68,6 +78,8 @@ func main() {
 		clientCmd.Parse(os.Args[2:])
 		mmarClientConfig := client.ConfigOptions{
 			LocalPort:      *clientLocalPort,
+			LocalHost:      *clientLocalHost,
+			LocalProto:     *clientLocalProto,
 			TunnelHttpPort: *clientTunnelHttpPort,
 			TunnelTcpPort:  *clientTunnelTcpPort,
 			TunnelHost:     *clientTunnelHost,

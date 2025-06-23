@@ -23,6 +23,8 @@ import (
 
 type ConfigOptions struct {
 	LocalPort      string
+	LocalHost      string
+	LocalProto     string
 	TunnelHttpPort string
 	TunnelTcpPort  string
 	TunnelHost     string
@@ -36,7 +38,7 @@ type MmarClient struct {
 }
 
 func (mc *MmarClient) localizeRequest(request *http.Request) {
-	localhost := fmt.Sprintf("http://localhost:%v%v", mc.LocalPort, request.RequestURI)
+	localhost := fmt.Sprintf("%v://%v:%v%v", mc.LocalProto, mc.LocalHost, mc.LocalPort, request.RequestURI)
 	localURL, urlErr := url.Parse(localhost)
 	if urlErr != nil {
 		log.Fatalf("Failed to parse URL: %v", urlErr)
@@ -44,6 +46,7 @@ func (mc *MmarClient) localizeRequest(request *http.Request) {
 
 	// Set URL to send request to local server
 	request.URL = localURL
+	request.Host = mc.LocalHost
 	// Clear requestURI since it is now a client request
 	request.RequestURI = ""
 }
@@ -195,7 +198,7 @@ func (mc *MmarClient) ProcessTunnelMessages(ctx context.Context) {
 				} else {
 					mc.subdomain = tunnelSubdomain
 				}
-				logger.LogTunnelCreated(tunnelSubdomain, mc.TunnelHost, mc.TunnelHttpPort, mc.LocalPort)
+				logger.LogTunnelCreated(tunnelSubdomain, mc.TunnelHost, mc.TunnelHttpPort, mc.LocalProto, mc.LocalHost, mc.LocalPort)
 			case protocol.CLIENT_TUNNEL_LIMIT:
 				limit := logger.ColorLogStr(
 					constants.RED,
