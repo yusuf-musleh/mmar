@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -26,6 +28,8 @@ type ConfigOptions struct {
 	TunnelHttpPort string
 	TunnelTcpPort  string
 	TunnelHost     string
+	CustomDns      string
+	CustomCert     string
 }
 
 type MmarClient struct {
@@ -56,6 +60,50 @@ func (mc *MmarClient) handleRequestMessage(tunnelMsg protocol.TunnelMessage) {
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
+	}
+
+	// Use custom DNS if set
+	if mc.CustomDns != "" {
+		r := &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+				return net.Dial("udp", mc.CustomDns)
+			},
+		}
+		dialer := &net.Dialer{
+			Resolver: r,
+		}
+
+		tp := &http.Transport{
+			DialContext: dialer.DialContext,
+		}
+
+		fwdClient.Transport = tp
+	}
+
+	// Use custom TLS certificate if setup
+	if mc.CustomCert != "" {
+		certData, certFileErr := os.ReadFile(mc.CustomCert)
+		if certFileErr != nil {
+			logger.Log(
+				constants.RED,
+				fmt.Sprintf(
+					"Could not read certificate from file: %v",
+					certFileErr,
+				))
+			os.Exit(1)
+		}
+
+		cert, certErr := x509.ParseCertificate(certData)
+		if certErr != nil {
+			logger.Log(constants.YELLOW, "Warning: Could not load custom certificate")
+		} else {
+			fmt.Println("adding cert dawg..")
+			fwdClient.Transport.(*http.Transport).TLSClientConfig = &tls.Config{
+				RootCAs: x509.NewCertPool(),
+			}
+			fwdClient.Transport.(*http.Transport).TLSClientConfig.RootCAs.AddCert(cert)
+		}
 	}
 
 	reqReader := bufio.NewReader(bytes.NewReader(tunnelMsg.MsgData))

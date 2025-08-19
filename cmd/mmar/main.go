@@ -45,6 +45,16 @@ func main() {
 		utils.EnvVarOrDefault(constants.MMAR_ENV_VAR_TUNNEL_HOST, constants.TUNNEL_HOST),
 		constants.TUNNEL_HOST_HELP,
 	)
+	clientCustomDns := clientCmd.String(
+		"custom-dns",
+		utils.EnvVarOrDefault(constants.MMAR_ENV_VAR_CUSTOM_DNS, ""),
+		constants.CLIENT_CUSTOM_DNS_HELP,
+	)
+	clientCustomCert := clientCmd.String(
+		"custom-cert",
+		utils.EnvVarOrDefault(constants.MMAR_ENV_VAR_CUSTOM_CERT, ""),
+		constants.CLIENT_CUSTOM_CERT_HELP,
+	)
 
 	versionCmd := flag.NewFlagSet(constants.VERSION_CMD, flag.ExitOnError)
 	versionCmd.Usage = utils.MmarVersionUsage
@@ -71,6 +81,8 @@ func main() {
 			TunnelHttpPort: *clientTunnelHttpPort,
 			TunnelTcpPort:  *clientTunnelTcpPort,
 			TunnelHost:     *clientTunnelHost,
+			CustomDns:      *clientCustomDns,
+			CustomCert:     *clientCustomCert,
 		}
 		client.Run(mmarClientConfig)
 	case constants.VERSION_CMD:

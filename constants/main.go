@@ -18,6 +18,8 @@ const (
 	MMAR_ENV_VAR_TUNNEL_HTTP_PORT = "MMAR__TUNNEL_HTTP_PORT"
 	MMAR_ENV_VAR_TUNNEL_TCP_PORT  = "MMAR__TUNNEL_TCP_PORT"
 	MMAR_ENV_VAR_TUNNEL_HOST      = "MMAR__TUNNEL_HOST"
+	MMAR_ENV_VAR_CUSTOM_DNS       = "MMAR__CUSTOM_DNS"
+	MMAR_ENV_VAR_CUSTOM_CERT      = "MMAR__CUSTOM_CERT"
 
 	SERVER_STATS_DEFAULT_USERNAME = "admin"
 	SERVER_STATS_DEFAULT_PASSWORD = "admin"
@@ -25,10 +27,12 @@ const (
 	SERVER_HTTP_PORT_HELP = "Define port where mmar will bind to and run on server for HTTP requests."
 	SERVER_TCP_PORT_HELP  = "Define port where mmar will bind to and run on server for TCP connections."
 
-	CLIENT_LOCAL_PORT_HELP = "Define the port where your local dev server is running to expose through mmar."
-	CLIENT_HTTP_PORT_HELP  = "Define port of mmar HTTP server to make requests through the tunnel."
-	CLIENT_TCP_PORT_HELP   = "Define port of mmar TCP server for client to connect to, creating a tunnel."
-	TUNNEL_HOST_HELP       = "Define host domain of mmar server for client to connect to."
+	CLIENT_LOCAL_PORT_HELP  = "Define the port where your local dev server is running to expose through mmar."
+	CLIENT_HTTP_PORT_HELP   = "Define port of mmar HTTP server to make requests through the tunnel."
+	CLIENT_TCP_PORT_HELP    = "Define port of mmar TCP server for client to connect to, creating a tunnel."
+	TUNNEL_HOST_HELP        = "Define host domain of mmar server for client to connect to."
+	CLIENT_CUSTOM_DNS_HELP  = "Define a custom DNS server that the mmar client should use when accessing your local dev server. (eg: 8.8.8.8:53, defaults to DNS in OS)"
+	CLIENT_CUSTOM_CERT_HELP = "Define path to file custom TLS certificate containing complete ASN.1 DER content (certificate, signature algorithm and signature). Currently used for testing, but may be used to allow mmar client to work with a dev server using custom TLS certificate setups. (eg: /path/to/cert)"
 
 	TUNNEL_MESSAGE_PROTOCOL_VERSION = 3
 	TUNNEL_MESSAGE_DATA_DELIMITER   = '\n'
