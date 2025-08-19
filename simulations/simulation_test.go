@@ -43,7 +43,15 @@ func StartMmarServer(ctx context.Context) {
 	}
 }
 
-func StartMmarClient(ctx context.Context, urlCh chan string, localDevServerPort string) {
+func StartMmarClient(
+	ctx context.Context,
+	urlCh chan string,
+	localDevServerPort string,
+	localDevServerHost string,
+	localDevServerProto string,
+	customDns string,
+	customCert string,
+) {
 	cmd := exec.CommandContext(
 		ctx,
 		"./mmar",
@@ -53,6 +61,26 @@ func StartMmarClient(ctx context.Context, urlCh chan string, localDevServerPort 
 		"--local-port",
 		localDevServerPort,
 	)
+
+	if localDevServerHost != "" {
+		cmd.Args = append(cmd.Args, "--local-host", localDevServerHost)
+	}
+
+	if localDevServerProto != "" {
+		cmd.Args = append(cmd.Args, "--local-proto", localDevServerProto)
+	}
+
+	if customDns != "" {
+		cmd.Args = append(cmd.Args, "--custom-dns", customDns)
+	}
+
+	if customCert != "" {
+		cmd.Args = append(cmd.Args, "--custom-cert", customCert)
+	}
+
+	cmd.Args = append(cmd.Args, "")
+
+	cmd.Stdout = os.Stdout
 
 	// Pipe Stderr To capture logs for extracting the tunnel url
 	pipe, _ := cmd.StderrPipe()
@@ -77,7 +105,6 @@ func StartMmarClient(ctx context.Context, urlCh chan string, localDevServerPort 
 			tunnelUrl := extractTunnelURL(line)
 			if tunnelUrl != "" {
 				urlCh <- tunnelUrl
-				break
 			}
 			line, readErr = stdoutReader.ReadString('\n')
 		}
@@ -91,9 +118,9 @@ func StartMmarClient(ctx context.Context, urlCh chan string, localDevServerPort 
 	}
 }
 
-func StartLocalDevServer() *devserver.DevServer {
-	ds := devserver.NewDevServer()
-	log.Printf("Started local dev server on: http://localhost:%v", ds.Port())
+func StartLocalDevServer(proto string, addr string) *devserver.DevServer {
+	ds := devserver.NewDevServer(proto, addr)
+	log.Printf("Started local dev server on: %v://%v:%v", proto, addr, ds.Port())
 	return ds
 }
 
@@ -735,8 +762,19 @@ func verifyDevServerCrashHandledGracefully(t *testing.T, client *http.Client, tu
 func TestSimulation(t *testing.T) {
 	simulationCtx, simulationCancel := context.WithCancel(context.Background())
 
-	localDevServer := StartLocalDevServer()
+	// Start a local dev server with http
+	localDevServer := StartLocalDevServer("http", "localhost")
 	defer localDevServer.Close()
+
+	// Start a local dev server with https
+	localDevTLSServer := StartLocalDevServer("https", "example.com")
+	defer localDevTLSServer.Close()
+
+	// Write cert to file so we are able to pass it into mmar client
+	certErr := os.WriteFile("./temp-cert", localDevTLSServer.Certificate().Raw, 0644) // 0644 is file permissions
+	if certErr != nil {
+		log.Fatal(certErr)
+	}
 
 	go dnsserver.StartDnsServer()
 
@@ -744,7 +782,9 @@ func TestSimulation(t *testing.T) {
 	wait := time.NewTimer(2 * time.Second)
 	<-wait.C
 	clientUrlCh := make(chan string)
-	go StartMmarClient(simulationCtx, clientUrlCh, localDevServer.Port())
+
+	// Start a basic mmar client
+	go StartMmarClient(simulationCtx, clientUrlCh, localDevServer.Port(), "", "", "", "")
 
 	// Wait for tunnel url
 	tunnelUrl := <-clientUrlCh

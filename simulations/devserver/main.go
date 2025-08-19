@@ -25,11 +25,19 @@ type DevServer struct {
 	*httptest.Server
 }
 
-func NewDevServer() *DevServer {
+func NewDevServer(proto string, addr string) *DevServer {
 	mux := setupMux()
 
+	var httpServer *httptest.Server
+	switch proto {
+	case "https":
+		httpServer = httptest.NewTLSServer(mux)
+	case "http":
+		httpServer = httptest.NewServer(mux)
+	}
+
 	return &DevServer{
-		httptest.NewServer(mux),
+		httpServer,
 	}
 }
 
