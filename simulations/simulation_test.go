@@ -142,12 +142,13 @@ func verifyGetRequestSuccess(t *testing.T, client *http.Client, tunnelUrl string
 
 	resp, respErr := client.Do(req)
 	if respErr != nil {
-		log.Printf("Failed to get response: %v", respErr)
+		t.Errorf("Failed to get response: %v", respErr)
 	}
 
 	expectedReqHeaders := map[string][]string{
 		"User-Agent":      {"Go-http-client/1.1"}, // Default header in golang client
 		"Accept-Encoding": {"gzip"},               // Default header in golang client
+		"Connection":      {"close"},
 		"Simulation-Test": {"verify-get-request-success"},
 	}
 
@@ -186,12 +187,13 @@ func verifyGetRequestFail(t *testing.T, client *http.Client, tunnelUrl string, w
 
 	resp, respErr := client.Do(req)
 	if respErr != nil {
-		log.Printf("Failed to get response: %v", respErr)
+		t.Errorf("Failed to get response: %v", respErr)
 	}
 
 	expectedReqHeaders := map[string][]string{
 		"User-Agent":      {"Go-http-client/1.1"}, // Default header in golang client
 		"Accept-Encoding": {"gzip"},               // Default header in golang client
+		"Connection":      {"close"},
 		"Simulation-Test": {"verify-get-request-fail"},
 	}
 
@@ -237,12 +239,13 @@ func verifyPostRequestSuccess(t *testing.T, client *http.Client, tunnelUrl strin
 
 	resp, respErr := client.Do(req)
 	if respErr != nil {
-		log.Printf("Failed to get response: %v", respErr)
+		t.Errorf("Failed to get response: %v", respErr)
 	}
 
 	expectedReqHeaders := map[string][]string{
 		"User-Agent":      {"Go-http-client/1.1"}, // Default header in golang client
 		"Accept-Encoding": {"gzip"},               // Default header in golang client
+		"Connection":      {"close"},
 		"Simulation-Test": {"verify-post-request-success"},
 		"Content-Length":  {strconv.Itoa(len(serializedReqBody))},
 	}
@@ -292,12 +295,13 @@ func verifyPostRequestFail(t *testing.T, client *http.Client, tunnelUrl string, 
 
 	resp, respErr := client.Do(req)
 	if respErr != nil {
-		log.Printf("Failed to get response: %v", respErr)
+		t.Errorf("Failed to get response: %v", respErr)
 	}
 
 	expectedReqHeaders := map[string][]string{
 		"User-Agent":      {"Go-http-client/1.1"}, // Default header in golang client
 		"Accept-Encoding": {"gzip"},               // Default header in golang client
+		"Connection":      {"close"},
 		"Simulation-Test": {"verify-post-request-fail"},
 		"Content-Length":  {strconv.Itoa(len(serializedReqBody))},
 	}
@@ -346,12 +350,13 @@ func verifyRedirectsHandled(t *testing.T, client *http.Client, tunnelUrl string,
 
 	resp, respErr := client.Do(req)
 	if respErr != nil {
-		log.Printf("Failed to get response: %v", respErr)
+		t.Errorf("Failed to get response: %v", respErr)
 	}
 
 	expectedReqHeaders := map[string][]string{
 		"User-Agent":      {"Go-http-client/1.1"}, // Default header in golang client
 		"Accept-Encoding": {"gzip"},               // Default header in golang client
+		"Connection":      {"close"},
 		"Simulation-Test": {"verify-redirect-request"},
 		"Referer":         {tunnelUrl + "/redirect"}, // Include referer header since it redirects
 	}
@@ -405,6 +410,7 @@ func verifyInvalidMethodRequestHandled(t *testing.T, client *http.Client, tunnel
 	expectedReqHeaders := map[string][]string{
 		"User-Agent":      {"Go-http-client/1.1"}, // Default header in golang client
 		"Accept-Encoding": {"gzip"},               // Default header in golang client
+		"Connection":      {"close"},
 		"Simulation-Test": {"verify-invalid-method-request"},
 	}
 
@@ -477,7 +483,6 @@ func verifyInvalidHttpVersionRequestHandled(t *testing.T, tunnelUrl string, wg *
 	if respErr != nil {
 		t.Errorf("%v: Failed to get response %v", "verifyInvalidHttpVersionRequestHandled", respErr)
 	}
-
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf(
 			"%v: resp.StatusCode = %v; want %v",
@@ -573,7 +578,6 @@ func verifyContentLengthWithNoBodyRequestHandled(t *testing.T, tunnelUrl string,
 	if respErr != nil {
 		t.Errorf("%v: Failed to get response %v", "verifyContentLengthWithNoBodyRequestHandled", respErr)
 	}
-
 	expectedBody := constants.READ_BODY_CHUNK_TIMEOUT_ERR_TEXT
 
 	expectedResp := expectedResponse{
@@ -607,12 +611,13 @@ func verifyRequestWithLargeBody(t *testing.T, client *http.Client, tunnelUrl str
 
 	resp, respErr := client.Do(req)
 	if respErr != nil {
-		log.Printf("Failed to get response: %v", respErr)
+		t.Errorf("Failed to get response: %v", respErr)
 	}
 
 	expectedReqHeaders := map[string][]string{
 		"User-Agent":      {"Go-http-client/1.1"}, // Default header in golang client
 		"Accept-Encoding": {"gzip"},               // Default header in golang client
+		"Connection":      {"close"},
 		"Simulation-Test": {"verify-large-post-request-success"},
 		"Content-Length":  {strconv.Itoa(len(serializedReqBody))},
 	}
@@ -661,7 +666,11 @@ func verifyRequestWithVeryLargeBody(t *testing.T, client *http.Client, tunnelUrl
 
 	resp, respErr := client.Do(req)
 	if respErr != nil {
-		log.Printf("Failed to get response: %v", respErr)
+		// Check if connection was closed in the middle of writing, that's also valid behavior
+		if !strings.Contains(respErr.Error(), "write: connection reset by peer") {
+			t.Errorf("Failed to get response: %v", respErr)
+		}
+		return
 	}
 
 	expectedBody := constants.MAX_REQ_BODY_SIZE_ERR_TEXT
@@ -688,7 +697,7 @@ func verifyDevServerReturningInvalidRespHandled(t *testing.T, client *http.Clien
 
 	resp, respErr := client.Do(req)
 	if respErr != nil {
-		log.Printf("Failed to get response: %v", respErr)
+		t.Errorf("Failed to get response: %v", respErr)
 	}
 
 	expectedBody := constants.READ_RESP_BODY_ERR_TEXT
@@ -715,7 +724,7 @@ func verifyDevServerLongRunningReqHandledGradefully(t *testing.T, client *http.C
 
 	resp, respErr := client.Do(req)
 	if respErr != nil {
-		log.Printf("Failed to get response: %v", respErr)
+		t.Errorf("Failed to get response: %v", respErr)
 	}
 
 	expectedBody := constants.DEST_REQUEST_TIMEDOUT_ERR_TEXT
@@ -742,7 +751,7 @@ func verifyDevServerCrashHandledGracefully(t *testing.T, client *http.Client, tu
 
 	resp, respErr := client.Do(req)
 	if respErr != nil {
-		log.Printf("Failed to get response: %v", respErr)
+		t.Errorf("Failed to get response: %v", respErr)
 	}
 
 	expectedBody := constants.LOCALHOST_NOT_RUNNING_ERR_TEXT
@@ -781,13 +790,26 @@ func TestSimulation(t *testing.T) {
 	go StartMmarServer(simulationCtx)
 	wait := time.NewTimer(2 * time.Second)
 	<-wait.C
-	clientUrlCh := make(chan string)
 
 	// Start a basic mmar client
-	go StartMmarClient(simulationCtx, clientUrlCh, localDevServer.Port(), "", "", "", "")
+	basicClientUrlCh := make(chan string)
+	go StartMmarClient(simulationCtx, basicClientUrlCh, localDevServer.Port(), "", "", "", "")
 
-	// Wait for tunnel url
-	tunnelUrl := <-clientUrlCh
+	// Start another basic mmar client
+	basicClientUrlCh2 := make(chan string)
+	go StartMmarClient(simulationCtx, basicClientUrlCh2, localDevServer.Port(), "", "", "", "")
+
+	// Wait for all tunnel urls
+	mmarClientsCount := 2
+	tunnelUrls := []string{}
+	for range mmarClientsCount {
+		select {
+		case tunnelUrl := <-basicClientUrlCh:
+			tunnelUrls = append(tunnelUrls, tunnelUrl)
+		case tunnelUrl := <-basicClientUrlCh2:
+			tunnelUrls = append(tunnelUrls, tunnelUrl)
+		}
+	}
 
 	// Initialize http client
 	client := httpClient()
@@ -823,17 +845,26 @@ func TestSimulation(t *testing.T) {
 		verifyContentLengthWithNoBodyRequestHandled,
 	}
 
-	for _, simTest := range simulationTests {
-		wg.Add(1)
-		go simTest(t, client, tunnelUrl, &wg)
-	}
+	// Loop through all tunnel urls and run simulation tests
+	for _, tunnelUrl := range tunnelUrls {
 
-	for _, manualClientSimTest := range manualClientSimulationTests {
-		wg.Add(1)
-		go manualClientSimTest(t, tunnelUrl, &wg)
+		for _, simTest := range simulationTests {
+			wg.Add(1)
+			go simTest(t, client, tunnelUrl, &wg)
+		}
+
+		for _, manualClientSimTest := range manualClientSimulationTests {
+			wg.Add(1)
+			go manualClientSimTest(t, tunnelUrl, &wg)
+		}
 	}
 
 	wg.Wait()
+
+	// Delete cert file
+	if rmErr := os.Remove("./temp-cert"); rmErr != nil {
+		log.Fatal(rmErr)
+	}
 
 	// Stop simulation tests
 	simulationCancel()

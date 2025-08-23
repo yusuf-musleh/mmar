@@ -95,7 +95,8 @@ func httpClient() *http.Client {
 	dialer := initCustomDialer()
 
 	tp := &http.Transport{
-		DialContext: dialer.DialContext,
+		DialContext:       dialer.DialContext,
+		DisableKeepAlives: true,
 	}
 	client := &http.Client{Transport: tp}
 	return client

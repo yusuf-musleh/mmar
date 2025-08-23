@@ -148,8 +148,6 @@ func (mc *MmarClient) handleRequestMessage(tunnelMsg protocol.TunnelMessage) {
 		return
 	}
 
-	logger.LogHTTP(req, resp.StatusCode, resp.ContentLength, false, true)
-
 	// Writing response to buffer to tunnel it back
 	var responseBuff bytes.Buffer
 	resp.Write(&responseBuff)
@@ -158,6 +156,8 @@ func (mc *MmarClient) handleRequestMessage(tunnelMsg protocol.TunnelMessage) {
 	if err := mc.SendMessage(respMessage); err != nil {
 		log.Fatal(err)
 	}
+
+	logger.LogHTTP(req, resp.StatusCode, resp.ContentLength, false, true)
 }
 
 // Keep attempting to reconnect the existing tunnel until successful
