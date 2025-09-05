@@ -16,7 +16,6 @@ import (
 	"os"
 	"os/signal"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -247,17 +246,22 @@ func (ms *MmarServer) TunnelLimitedIP(ip string) bool {
 	return len(tunnels) >= constants.MAX_TUNNELS_PER_IP
 }
 
-func (ms *MmarServer) newClientTunnel(conn net.Conn) (*ClientTunnel, error) {
+func (ms *MmarServer) newClientTunnel(tunnel protocol.Tunnel, subdomain string) (*ClientTunnel, error) {
 	// Acquire lock to create new client tunnel data
 	ms.mu.Lock()
 
-	// Generate unique ID for client
-	uniqueId := ms.GenerateUniqueId()
-	tunnel := protocol.Tunnel{
-		Id:        uniqueId,
-		Conn:      conn,
-		CreatedOn: time.Now(),
+	var uniqueId string
+	var msgType uint8
+	if subdomain != "" {
+		uniqueId = subdomain
+		msgType = protocol.TUNNEL_RECLAIMED
+	} else {
+		// Generate unique ID for client if not passed in
+		uniqueId = ms.GenerateUniqueId()
+		msgType = protocol.TUNNEL_CREATED
 	}
+
+	tunnel.Id = uniqueId
 
 	// Create channels to tunnel requests to and recieve responses from
 	incomingChannel := make(chan IncomingRequest)
@@ -271,7 +275,7 @@ func (ms *MmarServer) newClientTunnel(conn net.Conn) (*ClientTunnel, error) {
 	}
 
 	// Check if IP reached max tunnel limit
-	clientIP := utils.ExtractIP(conn.RemoteAddr().String())
+	clientIP := utils.ExtractIP(tunnel.Conn.RemoteAddr().String())
 	limitedIP := ms.TunnelLimitedIP(clientIP)
 	// If so, send limit message to client and close client tunnel
 	if limitedIP {
@@ -295,43 +299,31 @@ func (ms *MmarServer) newClientTunnel(conn net.Conn) (*ClientTunnel, error) {
 	ms.mu.Unlock()
 
 	// Send unique ID to client
-	connMessage := protocol.TunnelMessage{MsgType: protocol.CLIENT_CONNECT, MsgData: []byte(uniqueId)}
+	connMessage := protocol.TunnelMessage{MsgType: msgType, MsgData: []byte(uniqueId)}
 	if err := clientTunnel.SendMessage(connMessage); err != nil {
 		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to send unique ID msg to client: %v", err))
 		return nil, err
 	}
+
+	// Start goroutine to process tunneled requests
+	go ms.processTunneledRequestsForClient(&clientTunnel)
 
 	return &clientTunnel, nil
 }
 
 func (ms *MmarServer) handleTcpConnection(conn net.Conn) {
 
-	clientTunnel, err := ms.newClientTunnel(conn)
-
-	if err != nil {
-		if errors.Is(err, CLIENT_MAX_TUNNELS_REACHED) {
-			// Close the connection when client max tunnels limit reached
-			conn.Close()
-			return
-		}
-		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to create ClientTunnel: %v", err))
-		return
+	tunnel := protocol.Tunnel{
+		Conn:      conn,
+		CreatedOn: time.Now(),
 	}
 
-	logger.Log(
-		constants.DEFAULT_COLOR,
-		fmt.Sprintf(
-			"[%s] Tunnel created: %s",
-			clientTunnel.Tunnel.Id,
-			conn.RemoteAddr().String(),
-		),
-	)
-
 	// Process Tunnel Messages coming from mmar client
-	go ms.processTunnelMessages(clientTunnel)
+	go ms.processTunnelMessages(tunnel)
+}
 
-	// Start goroutine to process tunneled requests
-	go ms.processTunneledRequestsForClient(clientTunnel)
+func (ms *MmarServer) closeTunnel(t *protocol.Tunnel) {
+	t.Conn.Close()
 }
 
 func (ms *MmarServer) closeClientTunnel(ct *ClientTunnel) {
@@ -349,6 +341,17 @@ func (ms *MmarServer) closeClientTunnel(ct *ClientTunnel) {
 
 	// Gracefully close the Client Tunnel
 	ct.close(true)
+}
+
+func (ms *MmarServer) closeClientTunnelOrConn(ct *ClientTunnel, t protocol.Tunnel) {
+
+	// If client has not reserved subdomain, just close the tcp connection
+	if !ct.ReservedSubdomain() {
+		ms.closeTunnel(&t)
+		return
+	}
+
+	ms.closeClientTunnel(ct)
 }
 
 func (ms *MmarServer) processTunneledRequestsForClient(ct *ClientTunnel) {
@@ -420,42 +423,96 @@ func (ms *MmarServer) processTunneledRequestsForClient(ct *ClientTunnel) {
 	}
 }
 
-func (ms *MmarServer) processTunnelMessages(ct *ClientTunnel) {
+func (ms *MmarServer) processTunnelMessages(t protocol.Tunnel) {
+	var ct *ClientTunnel
 	for {
 		// Send heartbeat if nothing has been read for a while
 		receiveMessageTimeout := time.AfterFunc(
 			constants.HEARTBEAT_FROM_SERVER_TIMEOUT*time.Second,
 			func() {
 				heartbeatMsg := protocol.TunnelMessage{MsgType: protocol.HEARTBEAT_FROM_SERVER}
-				if err := ct.SendMessage(heartbeatMsg); err != nil {
+				if err := t.SendMessage(heartbeatMsg); err != nil {
 					logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to send heartbeat: %v", err))
-					ms.closeClientTunnel(ct)
+					ms.closeClientTunnelOrConn(ct, t)
 					return
 				}
 				// Set a read timeout, if no response to heartbeat is recieved within that period,
 				// that means the client has disconnected
 				readDeadline := time.Now().Add((constants.READ_DEADLINE * time.Second))
-				ct.Tunnel.Conn.SetReadDeadline(readDeadline)
+				t.Conn.SetReadDeadline(readDeadline)
 			},
 		)
 
-		tunnelMsg, err := ct.ReceiveMessage()
+		tunnelMsg, err := t.ReceiveMessage()
 		// If a message is received, stop the receiveMessageTimeout and remove the ReadTimeout
 		// as we do not need to send heartbeat or check connection health in this iteration
 		receiveMessageTimeout.Stop()
-		ct.Tunnel.Conn.SetReadDeadline(time.Time{})
+		t.Conn.SetReadDeadline(time.Time{})
 
 		if err != nil {
 			logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Receive Message from client tunnel errored: %v", err))
 			if utils.NetworkError(err) {
 				// If error with connection, stop processing messages
-				ms.closeClientTunnel(ct)
+				ms.closeClientTunnelOrConn(ct, t)
 				return
 			}
 			continue
 		}
 
 		switch tunnelMsg.MsgType {
+		case protocol.CREATE_TUNNEL:
+			// mmar client requesting new tunnel
+			ct, err = ms.newClientTunnel(t, "")
+
+			if err != nil {
+				if errors.Is(err, CLIENT_MAX_TUNNELS_REACHED) {
+					// Close the connection when client max tunnels limit reached
+					t.Conn.Close()
+					return
+				}
+				logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to create ClientTunnel: %v", err))
+				return
+			}
+
+			logger.Log(
+				constants.DEFAULT_COLOR,
+				fmt.Sprintf(
+					"[%s] Tunnel created: %s",
+					ct.Tunnel.Id,
+					t.Conn.RemoteAddr().String(),
+				),
+			)
+		case protocol.RECLAIM_TUNNEL:
+			// mmar client reclaiming a previously created tunnel
+			existingId := string(tunnelMsg.MsgData)
+
+			// Check if the subdomain has already been taken
+			_, ok := ms.clients[existingId]
+			if ok {
+				// if so, close the tunnel, so the user can create a new one
+				ms.closeClientTunnelOrConn(ct, t)
+				return
+			}
+
+			ct, err = ms.newClientTunnel(t, existingId)
+			if err != nil {
+				if errors.Is(err, CLIENT_MAX_TUNNELS_REACHED) {
+					// Close the connection when client max tunnels limit reached
+					t.Conn.Close()
+					return
+				}
+				logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to reclaim ClientTunnel: %v", err))
+				return
+			}
+
+			logger.Log(
+				constants.DEFAULT_COLOR,
+				fmt.Sprintf(
+					"[%s] Tunnel reclaimed: %s",
+					existingId,
+					ct.Conn.RemoteAddr().String(),
+				),
+			)
 		case protocol.RESPONSE:
 			ct.outgoingChannel <- tunnelMsg
 		case protocol.LOCALHOST_NOT_RUNNING:
@@ -471,64 +528,18 @@ func (ms *MmarServer) processTunnelMessages(ct *ClientTunnel) {
 			destTimedoutMsg := protocol.TunnelMessage{MsgType: protocol.RESPONSE, MsgData: responseBuff.Bytes()}
 			ct.outgoingChannel <- destTimedoutMsg
 		case protocol.CLIENT_DISCONNECT:
-			ms.closeClientTunnel(ct)
+			ms.closeClientTunnelOrConn(ct, t)
 			return
 		case protocol.HEARTBEAT_FROM_CLIENT:
 			heartbeatAckMsg := protocol.TunnelMessage{MsgType: protocol.HEARTBEAT_ACK}
-			if err := ct.SendMessage(heartbeatAckMsg); err != nil {
+			if err := t.SendMessage(heartbeatAckMsg); err != nil {
 				logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to heartbeat ack to client: %v", err))
-				ms.closeClientTunnel(ct)
+				ms.closeClientTunnelOrConn(ct, t)
 				return
 			}
 		case protocol.HEARTBEAT_ACK:
 			// Got a heartbeat ack, that means the connection is healthy,
 			// we do not need to perform any action
-		case protocol.CLIENT_RECLAIM_SUBDOMAIN:
-			newAndExistingIDs := strings.Split(string(tunnelMsg.MsgData), ":")
-			newId := newAndExistingIDs[0]
-			existingId := newAndExistingIDs[1]
-
-			// Check if the subdomain has already been taken
-			_, ok := ms.clients[existingId]
-			if ok {
-				// if so, close the tunnel, so the user can create a new one
-				ms.closeClientTunnel(ct)
-				return
-			}
-
-			ct.Tunnel.Id = existingId
-
-			// Add existing client tunnel to clients
-			ms.clients[existingId] = *ct
-
-			// Remove newId tunnel from clients
-			delete(ms.clients, newId)
-
-			// Update the tunnels for the IP
-			clientIP := utils.ExtractIP(ct.Conn.RemoteAddr().String())
-			newIdIndex := slices.Index(ms.tunnelsPerIP[clientIP], newId)
-			if newIdIndex == -1 {
-				ms.tunnelsPerIP[clientIP] = append(ms.tunnelsPerIP[clientIP], existingId)
-			} else {
-				ms.tunnelsPerIP[clientIP][newIdIndex] = existingId
-			}
-
-			connMessage := protocol.TunnelMessage{MsgType: protocol.CLIENT_CONNECT, MsgData: []byte(existingId)}
-			if err := ct.SendMessage(connMessage); err != nil {
-				logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to send unique ID msg to client: %v", err))
-				ms.closeClientTunnel(ct)
-				return
-			}
-
-			logger.Log(
-				constants.DEFAULT_COLOR,
-				fmt.Sprintf(
-					"[%s] Tunnel reclaimed: %s -> %s",
-					newId,
-					ct.Conn.RemoteAddr().String(),
-					existingId,
-				),
-			)
 		case protocol.INVALID_RESP_FROM_DEST:
 			// Create a response for receiving invalid response from destination server
 			errState := protocol.TunnelErrState(protocol.INVALID_RESP_FROM_DEST)

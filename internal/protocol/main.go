@@ -19,8 +19,10 @@ import (
 const (
 	REQUEST = uint8(iota + 1)
 	RESPONSE
-	CLIENT_CONNECT
-	CLIENT_RECLAIM_SUBDOMAIN
+	CREATE_TUNNEL
+	RECLAIM_TUNNEL
+	TUNNEL_CREATED
+	TUNNEL_RECLAIMED
 	CLIENT_DISCONNECT
 	CLIENT_TUNNEL_LIMIT
 	LOCALHOST_NOT_RUNNING
@@ -176,6 +178,10 @@ func (tm *TunnelMessage) deserializeMessage(reader *bufio.Reader) error {
 	tm.MsgData = msgData
 
 	return nil
+}
+
+func (t *Tunnel) ReservedSubdomain() bool {
+	return t.Id != ""
 }
 
 func (t *Tunnel) SendMessage(tunnelMsg TunnelMessage) error {

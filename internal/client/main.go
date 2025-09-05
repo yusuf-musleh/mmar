@@ -98,7 +98,6 @@ func (mc *MmarClient) handleRequestMessage(tunnelMsg protocol.TunnelMessage) {
 		if certErr != nil {
 			logger.Log(constants.YELLOW, "Warning: Could not load custom certificate")
 		} else {
-			fmt.Println("adding cert dawg..")
 			fwdClient.Transport.(*http.Transport).TLSClientConfig = &tls.Config{
 				RootCAs: x509.NewCertPool(),
 			}
@@ -178,6 +177,14 @@ func (mc *MmarClient) reconnectTunnel(ctx context.Context) {
 			continue
 		}
 		mc.Tunnel.Conn = conn
+
+		// Try to reclaim the same subdomain
+		reclaimTunnelMsg := protocol.TunnelMessage{MsgType: protocol.RECLAIM_TUNNEL, MsgData: []byte(mc.subdomain)}
+		if err := mc.SendMessage(reclaimTunnelMsg); err != nil {
+			logger.Log(constants.DEFAULT_COLOR, "Tunnel failed to reconnect. Exiting...")
+			os.Exit(0)
+		}
+
 		break
 	}
 }
@@ -228,21 +235,9 @@ func (mc *MmarClient) ProcessTunnelMessages(ctx context.Context) {
 			}
 
 			switch tunnelMsg.MsgType {
-			case protocol.CLIENT_CONNECT:
+			case protocol.TUNNEL_CREATED, protocol.TUNNEL_RECLAIMED:
 				tunnelSubdomain := string(tunnelMsg.MsgData)
-				// If there is an existing subdomain, that means we are reconnecting with an
-				// existing mmar client, try to reclaim the same subdomain
-				if mc.subdomain != "" {
-					reconnectMsg := protocol.TunnelMessage{MsgType: protocol.CLIENT_RECLAIM_SUBDOMAIN, MsgData: []byte(tunnelSubdomain + ":" + mc.subdomain)}
-					mc.subdomain = ""
-					if err := mc.SendMessage(reconnectMsg); err != nil {
-						logger.Log(constants.DEFAULT_COLOR, "Tunnel failed to reconnect. Exiting...")
-						os.Exit(0)
-					}
-					continue
-				} else {
-					mc.subdomain = tunnelSubdomain
-				}
+				mc.subdomain = tunnelSubdomain
 				logger.LogTunnelCreated(tunnelSubdomain, mc.TunnelHost, mc.TunnelHttpPort, mc.LocalPort)
 			case protocol.CLIENT_TUNNEL_LIMIT:
 				limit := logger.ColorLogStr(
@@ -308,6 +303,12 @@ func Run(config ConfigOptions) {
 
 	// Process Tunnel Messages coming from mmar server
 	go mmarClient.ProcessTunnelMessages(ctx)
+
+	createTunnelMsg := protocol.TunnelMessage{MsgType: protocol.CREATE_TUNNEL}
+	if err := mmarClient.SendMessage(createTunnelMsg); err != nil {
+		logger.Log(constants.DEFAULT_COLOR, "Failed to create Tunnel. Exiting...")
+		os.Exit(0)
+	}
 
 	// Wait for an interrupt signal, if received, terminate gracefully
 	<-sigInt
