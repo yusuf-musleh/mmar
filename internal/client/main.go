@@ -106,8 +106,20 @@ func (mc *MmarClient) handleRequestMessage(tunnelMsg protocol.TunnelMessage) {
 	}
 
 	reqReader := bufio.NewReader(bytes.NewReader(tunnelMsg.MsgData))
-	req, reqErr := http.ReadRequest(reqReader)
 
+	// Extract RequestId
+	reqIdBuff := make([]byte, constants.REQUEST_ID_BUFF_SIZE)
+	_, err := io.ReadFull(reqReader, reqIdBuff)
+	if err != nil {
+		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to parse RequestId for request: %v\n", err))
+		return
+	}
+
+	// Include RequestId in tunnel back message
+	msgData := []byte{}
+	msgData = append(msgData, reqIdBuff...)
+
+	req, reqErr := http.ReadRequest(reqReader)
 	if reqErr != nil {
 		if errors.Is(reqErr, io.EOF) {
 			logger.Log(constants.DEFAULT_COLOR, "Connection to mmar server closed or disconnected. Exiting...")
@@ -127,20 +139,20 @@ func (mc *MmarClient) handleRequestMessage(tunnelMsg protocol.TunnelMessage) {
 	resp, fwdErr := fwdClient.Do(req)
 	if fwdErr != nil {
 		if errors.Is(fwdErr, syscall.ECONNREFUSED) || errors.Is(fwdErr, io.ErrUnexpectedEOF) || errors.Is(fwdErr, io.EOF) {
-			localhostNotRunningMsg := protocol.TunnelMessage{MsgType: protocol.LOCALHOST_NOT_RUNNING}
+			localhostNotRunningMsg := protocol.TunnelMessage{MsgType: protocol.LOCALHOST_NOT_RUNNING, MsgData: msgData}
 			if err := mc.SendMessage(localhostNotRunningMsg); err != nil {
 				log.Fatal(err)
 			}
 			return
 		} else if errors.Is(fwdErr, context.DeadlineExceeded) {
-			destServerTimedoutMsg := protocol.TunnelMessage{MsgType: protocol.DEST_REQUEST_TIMEDOUT}
+			destServerTimedoutMsg := protocol.TunnelMessage{MsgType: protocol.DEST_REQUEST_TIMEDOUT, MsgData: msgData}
 			if err := mc.SendMessage(destServerTimedoutMsg); err != nil {
 				log.Fatal(err)
 			}
 			return
 		}
 
-		invalidRespFromDestMsg := protocol.TunnelMessage{MsgType: protocol.INVALID_RESP_FROM_DEST}
+		invalidRespFromDestMsg := protocol.TunnelMessage{MsgType: protocol.INVALID_RESP_FROM_DEST, MsgData: msgData}
 		if err := mc.SendMessage(invalidRespFromDestMsg); err != nil {
 			log.Fatal(err)
 		}
@@ -150,8 +162,8 @@ func (mc *MmarClient) handleRequestMessage(tunnelMsg protocol.TunnelMessage) {
 	// Writing response to buffer to tunnel it back
 	var responseBuff bytes.Buffer
 	resp.Write(&responseBuff)
-
-	respMessage := protocol.TunnelMessage{MsgType: protocol.RESPONSE, MsgData: responseBuff.Bytes()}
+	msgData = append(msgData, responseBuff.Bytes()...)
+	respMessage := protocol.TunnelMessage{MsgType: protocol.RESPONSE, MsgData: msgData}
 	if err := mc.SendMessage(respMessage); err != nil {
 		log.Fatal(err)
 	}
@@ -177,6 +189,7 @@ func (mc *MmarClient) reconnectTunnel(ctx context.Context) {
 			continue
 		}
 		mc.Tunnel.Conn = conn
+		mc.Tunnel.Reader = bufio.NewReader(conn)
 
 		// Try to reclaim the same subdomain
 		reclaimTunnelMsg := protocol.TunnelMessage{MsgType: protocol.RECLAIM_TUNNEL, MsgData: []byte(mc.subdomain)}
@@ -293,7 +306,7 @@ func Run(config ConfigOptions) {
 	}
 	defer conn.Close()
 	mmarClient := MmarClient{
-		protocol.Tunnel{Conn: conn},
+		protocol.Tunnel{Conn: conn, Reader: bufio.NewReader(conn)},
 		config,
 		"",
 	}

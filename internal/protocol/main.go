@@ -78,6 +78,7 @@ type Tunnel struct {
 	Id        string
 	Conn      net.Conn
 	CreatedOn time.Time
+	Reader    *bufio.Reader
 }
 
 type TunnelInterface interface {
@@ -195,11 +196,9 @@ func (t *Tunnel) SendMessage(tunnelMsg TunnelMessage) error {
 }
 
 func (t *Tunnel) ReceiveMessage() (TunnelMessage, error) {
-	msgReader := bufio.NewReader(t.Conn)
-
 	// Read and deserialize tunnel message data
 	tunnelMessage := TunnelMessage{}
-	deserializeErr := tunnelMessage.deserializeMessage(msgReader)
+	deserializeErr := tunnelMessage.deserializeMessage(t.Reader)
 
 	return tunnelMessage, deserializeErr
 }

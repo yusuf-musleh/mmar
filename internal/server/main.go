@@ -4,13 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
 	"io"
 	"log"
-	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -43,7 +43,6 @@ type IncomingRequest struct {
 	responseWriter  http.ResponseWriter
 	request         *http.Request
 	cancel          context.CancelCauseFunc
-	serializedReq   []byte
 	ctx             context.Context
 }
 
@@ -52,11 +51,14 @@ type OutgoingResponse struct {
 	body       []byte
 }
 
+type RequestId uint32
+
 // Tunnel to Client
 type ClientTunnel struct {
 	protocol.Tunnel
-	incomingChannel chan IncomingRequest
-	outgoingChannel chan protocol.TunnelMessage
+	incomingChannel  chan IncomingRequest
+	outgoingChannel  chan protocol.TunnelMessage
+	inflightRequests *sync.Map
 }
 
 func (ct *ClientTunnel) drainChannels() {
@@ -116,6 +118,16 @@ func (ct *ClientTunnel) close(graceful bool) {
 			ct.Conn.RemoteAddr().String(),
 		),
 	)
+}
+
+// Generate unique request id for incoming request for client
+func (ct *ClientTunnel) GenerateUniqueRequestID() RequestId {
+	var generatedReqId RequestId
+
+	for _, exists := ct.inflightRequests.Load(generatedReqId); exists || generatedReqId == 0; {
+		generatedReqId = RequestId(GenerateRandomUint32())
+	}
+	return generatedReqId
 }
 
 // Serves simple stats for mmar server behind Basic Authentication
@@ -192,19 +204,33 @@ func (ms *MmarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Create response channel to receive response for tunneled request
 		respChannel := make(chan OutgoingResponse)
 
-		// Tunnel the request
-		clientTunnel.incomingChannel <- IncomingRequest{
+		// Add request to client's inflight requests
+		reqId := clientTunnel.GenerateUniqueRequestID()
+		incomingReq := IncomingRequest{
 			responseChannel: respChannel,
 			responseWriter:  w,
 			request:         r,
 			cancel:          cancel,
-			serializedReq:   serializedRequest,
 			ctx:             ctx,
+		}
+		clientTunnel.inflightRequests.Store(reqId, incomingReq)
+
+		// Construct Request message data
+		reqIdBuff := make([]byte, constants.REQUEST_ID_BUFF_SIZE)
+		binary.LittleEndian.PutUint32(reqIdBuff, uint32(reqId))
+		reqMsgData := append(reqIdBuff, serializedRequest...)
+
+		// Tunnel the request to mmar client
+		reqMessage := protocol.TunnelMessage{MsgType: protocol.REQUEST, MsgData: reqMsgData}
+		if err := clientTunnel.SendMessage(reqMessage); err != nil {
+			logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to send Request msg to client: %v", err))
+			cancel(FAILED_TO_FORWARD_TO_MMAR_CLIENT_ERR)
 		}
 
 		select {
 		case <-ctx.Done(): // Request is canceled or Tunnel is closed if context is canceled
 			handleCancel(context.Cause(ctx), w)
+			clientTunnel.inflightRequests.Delete(reqId)
 			return
 		case resp, _ := <-respChannel: // Await response for tunneled request
 			// Add header to close the connection
@@ -219,20 +245,15 @@ func (ms *MmarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (ms *MmarServer) GenerateUniqueId() string {
-	reservedIDs := []string{"", "admin", "stats"}
+func (ms *MmarServer) GenerateUniqueSubdomain() string {
+	reservedSubdomains := []string{"", "admin", "stats"}
 
-	generatedId := ""
-	for _, exists := ms.clients[generatedId]; exists || slices.Contains(reservedIDs, generatedId); {
-		var randSeed *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
-		b := make([]byte, constants.ID_LENGTH)
-		for i := range b {
-			b[i] = constants.ID_CHARSET[randSeed.Intn(len(constants.ID_CHARSET))]
-		}
-		generatedId = string(b)
+	generatedSubdomain := ""
+	for _, exists := ms.clients[generatedSubdomain]; exists || slices.Contains(reservedSubdomains, generatedSubdomain); {
+		generatedSubdomain = GenerateRandomID()
 	}
 
-	return generatedId
+	return generatedSubdomain
 }
 
 func (ms *MmarServer) TunnelLimitedIP(ip string) bool {
@@ -250,28 +271,32 @@ func (ms *MmarServer) newClientTunnel(tunnel protocol.Tunnel, subdomain string) 
 	// Acquire lock to create new client tunnel data
 	ms.mu.Lock()
 
-	var uniqueId string
+	var uniqueSubdomain string
 	var msgType uint8
 	if subdomain != "" {
-		uniqueId = subdomain
+		uniqueSubdomain = subdomain
 		msgType = protocol.TUNNEL_RECLAIMED
 	} else {
-		// Generate unique ID for client if not passed in
-		uniqueId = ms.GenerateUniqueId()
+		// Generate unique subdomain for client if not passed in
+		uniqueSubdomain = ms.GenerateUniqueSubdomain()
 		msgType = protocol.TUNNEL_CREATED
 	}
 
-	tunnel.Id = uniqueId
+	tunnel.Id = uniqueSubdomain
 
 	// Create channels to tunnel requests to and recieve responses from
 	incomingChannel := make(chan IncomingRequest)
 	outgoingChannel := make(chan protocol.TunnelMessage)
+
+	// Initialize inflight requests map for client tunnel
+	var inflightRequests sync.Map
 
 	// Create client tunnel
 	clientTunnel := ClientTunnel{
 		tunnel,
 		incomingChannel,
 		outgoingChannel,
+		&inflightRequests,
 	}
 
 	// Check if IP reached max tunnel limit
@@ -290,23 +315,20 @@ func (ms *MmarServer) newClientTunnel(tunnel protocol.Tunnel, subdomain string) 
 	}
 
 	// Add client tunnel to clients
-	ms.clients[uniqueId] = clientTunnel
+	ms.clients[uniqueSubdomain] = clientTunnel
 
 	// Associate tunnel with client IP
-	ms.tunnelsPerIP[clientIP] = append(ms.tunnelsPerIP[clientIP], uniqueId)
+	ms.tunnelsPerIP[clientIP] = append(ms.tunnelsPerIP[clientIP], uniqueSubdomain)
 
 	// Release lock once created
 	ms.mu.Unlock()
 
-	// Send unique ID to client
-	connMessage := protocol.TunnelMessage{MsgType: msgType, MsgData: []byte(uniqueId)}
+	// Send unique subdomain to client
+	connMessage := protocol.TunnelMessage{MsgType: msgType, MsgData: []byte(uniqueSubdomain)}
 	if err := clientTunnel.SendMessage(connMessage); err != nil {
-		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to send unique ID msg to client: %v", err))
+		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to send unique subdomain msg to client: %v", err))
 		return nil, err
 	}
-
-	// Start goroutine to process tunneled requests
-	go ms.processTunneledRequestsForClient(&clientTunnel)
 
 	return &clientTunnel, nil
 }
@@ -316,6 +338,7 @@ func (ms *MmarServer) handleTcpConnection(conn net.Conn) {
 	tunnel := protocol.Tunnel{
 		Conn:      conn,
 		CreatedOn: time.Now(),
+		Reader:    bufio.NewReader(conn),
 	}
 
 	// Process Tunnel Messages coming from mmar client
@@ -354,72 +377,70 @@ func (ms *MmarServer) closeClientTunnelOrConn(ct *ClientTunnel, t protocol.Tunne
 	ms.closeClientTunnel(ct)
 }
 
-func (ms *MmarServer) processTunneledRequestsForClient(ct *ClientTunnel) {
-	for {
-		// Read requests coming in tunnel channel
-		incomingReq, ok := <-ct.incomingChannel
-		if !ok {
-			// Channel closed, client disconencted, shutdown goroutine
+func (ms *MmarServer) handleResponseMessages(ct *ClientTunnel, tunnelMsg protocol.TunnelMessage) {
+	respReader := bufio.NewReader(bytes.NewReader(tunnelMsg.MsgData))
+
+	// Extract RequestId
+	reqIdBuff := make([]byte, constants.REQUEST_ID_BUFF_SIZE)
+	_, err := io.ReadFull(respReader, reqIdBuff)
+	if err != nil {
+		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("[%s] - Failed to parse RequestId for response: %v\n", ct.Tunnel.Id, err))
+		return
+	}
+
+	// Get Inflight Request and remove it from inflight requests
+	reqId := RequestId(binary.LittleEndian.Uint32(reqIdBuff))
+	inflight, loaded := ct.inflightRequests.LoadAndDelete(reqId)
+	if !loaded {
+		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("[%s] Failed to identify inflight request: %v", ct.Tunnel.Id, reqId))
+		return
+	}
+
+	inflightRequest, ok := inflight.(IncomingRequest)
+	if !ok {
+		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("[%s] Failed to parse inflight request: %v", ct.Tunnel.Id, reqId))
+		return
+	}
+
+	// Read response for forwarded request
+	resp, respErr := http.ReadResponse(respReader, inflightRequest.request)
+
+	if respErr != nil {
+		if errors.Is(respErr, io.ErrUnexpectedEOF) || errors.Is(respErr, net.ErrClosed) {
+			inflightRequest.cancel(CLIENT_DISCONNECTED_ERR)
+			ms.closeClientTunnel(ct)
 			return
 		}
+		failedReq := fmt.Sprintf("%s - %s%s", inflightRequest.request.Method, html.EscapeString(inflightRequest.request.URL.Path), inflightRequest.request.URL.RawQuery)
+		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to return response: %v\n\n for req: %v", respErr, failedReq))
+		inflightRequest.cancel(FAILED_TO_READ_RESP_FROM_MMAR_CLIENT_ERR)
+		return
+	}
 
-		// Forward the request to mmar client
-		reqMessage := protocol.TunnelMessage{MsgType: protocol.REQUEST, MsgData: incomingReq.serializedReq}
-		if err := ct.SendMessage(reqMessage); err != nil {
-			logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to send Request msg to client: %v", err))
-			incomingReq.cancel(FAILED_TO_FORWARD_TO_MMAR_CLIENT_ERR)
-			continue
+	respBody, respBodyErr := io.ReadAll(resp.Body)
+	if respBodyErr != nil {
+		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to parse response body: %v\n\n", respBodyErr))
+		inflightRequest.cancel(READ_RESP_BODY_ERR)
+		return
+	}
+
+	defer resp.Body.Close()
+
+	// Set headers for response
+	for hKey, hVal := range resp.Header {
+		inflightRequest.responseWriter.Header().Set(hKey, hVal[0])
+		// Add remaining values for header if more than than one exists
+		for i := 1; i < len(hVal); i++ {
+			inflightRequest.responseWriter.Header().Add(hKey, hVal[i])
 		}
+	}
 
-		// Wait for response for this request to come back from outgoing channel
-		respTunnelMsg, ok := <-ct.outgoingChannel
-		if !ok {
-			// Channel closed, client disconencted, shutdown goroutine
-			return
-		}
-
-		// Read response for forwarded request
-		respReader := bufio.NewReader(bytes.NewReader(respTunnelMsg.MsgData))
-		resp, respErr := http.ReadResponse(respReader, incomingReq.request)
-
-		if respErr != nil {
-			if errors.Is(respErr, io.ErrUnexpectedEOF) || errors.Is(respErr, net.ErrClosed) {
-				incomingReq.cancel(CLIENT_DISCONNECTED_ERR)
-				ms.closeClientTunnel(ct)
-				return
-			}
-			failedReq := fmt.Sprintf("%s - %s%s", incomingReq.request.Method, html.EscapeString(incomingReq.request.URL.Path), incomingReq.request.URL.RawQuery)
-			logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to return response: %v\n\n for req: %v", respErr, failedReq))
-			incomingReq.cancel(FAILED_TO_READ_RESP_FROM_MMAR_CLIENT_ERR)
-			continue
-		}
-
-		respBody, respBodyErr := io.ReadAll(resp.Body)
-		if respBodyErr != nil {
-			logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to parse response body: %v\n\n", respBodyErr))
-			incomingReq.cancel(READ_RESP_BODY_ERR)
-			continue
-		}
-
-		// Set headers for response
-		for hKey, hVal := range resp.Header {
-			incomingReq.responseWriter.Header().Set(hKey, hVal[0])
-			// Add remaining values for header if more than than one exists
-			for i := 1; i < len(hVal); i++ {
-				incomingReq.responseWriter.Header().Add(hKey, hVal[i])
-			}
-		}
-
-		// Close response body
-		resp.Body.Close()
-
-		select {
-		case <-incomingReq.ctx.Done():
-			// Request is canceled, on to the next request
-			continue
-		case incomingReq.responseChannel <- OutgoingResponse{statusCode: resp.StatusCode, body: respBody}:
-			// Send response data back
-		}
+	select {
+	case <-inflightRequest.ctx.Done():
+		// Request is canceled, do nothing
+		return
+	case inflightRequest.responseChannel <- OutgoingResponse{statusCode: resp.StatusCode, body: respBody}:
+		// Send response data back
 	}
 }
 
@@ -436,7 +457,7 @@ func (ms *MmarServer) processTunnelMessages(t protocol.Tunnel) {
 					ms.closeClientTunnelOrConn(ct, t)
 					return
 				}
-				// Set a read timeout, if no response to heartbeat is recieved within that period,
+				// Set a read timeout, if no response to heartbeat is received within that period,
 				// that means the client has disconnected
 				readDeadline := time.Now().Add((constants.READ_DEADLINE * time.Second))
 				t.Conn.SetReadDeadline(readDeadline)
@@ -514,19 +535,25 @@ func (ms *MmarServer) processTunnelMessages(t protocol.Tunnel) {
 				),
 			)
 		case protocol.RESPONSE:
-			ct.outgoingChannel <- tunnelMsg
+			go ms.handleResponseMessages(ct, tunnelMsg)
 		case protocol.LOCALHOST_NOT_RUNNING:
 			// Create a response for Tunnel connected but localhost not running
 			errState := protocol.TunnelErrState(protocol.LOCALHOST_NOT_RUNNING)
 			responseBuff := createSerializedServerResp("200 OK", http.StatusOK, errState)
-			notRunningMsg := protocol.TunnelMessage{MsgType: protocol.RESPONSE, MsgData: responseBuff.Bytes()}
-			ct.outgoingChannel <- notRunningMsg
+			notRunningMsg := protocol.TunnelMessage{
+				MsgType: protocol.RESPONSE,
+				MsgData: append(tunnelMsg.MsgData, responseBuff.Bytes()...),
+			}
+			go ms.handleResponseMessages(ct, notRunningMsg)
 		case protocol.DEST_REQUEST_TIMEDOUT:
 			// Create a response for Tunnel connected but localhost took too long to respond
 			errState := protocol.TunnelErrState(protocol.DEST_REQUEST_TIMEDOUT)
 			responseBuff := createSerializedServerResp("200 OK", http.StatusOK, errState)
-			destTimedoutMsg := protocol.TunnelMessage{MsgType: protocol.RESPONSE, MsgData: responseBuff.Bytes()}
-			ct.outgoingChannel <- destTimedoutMsg
+			destTimedoutMsg := protocol.TunnelMessage{
+				MsgType: protocol.RESPONSE,
+				MsgData: append(tunnelMsg.MsgData, responseBuff.Bytes()...),
+			}
+			go ms.handleResponseMessages(ct, destTimedoutMsg)
 		case protocol.CLIENT_DISCONNECT:
 			ms.closeClientTunnelOrConn(ct, t)
 			return
@@ -544,8 +571,11 @@ func (ms *MmarServer) processTunnelMessages(t protocol.Tunnel) {
 			// Create a response for receiving invalid response from destination server
 			errState := protocol.TunnelErrState(protocol.INVALID_RESP_FROM_DEST)
 			responseBuff := createSerializedServerResp("500 Internal Server Error", http.StatusInternalServerError, errState)
-			invalidRespFromDestMsg := protocol.TunnelMessage{MsgType: protocol.RESPONSE, MsgData: responseBuff.Bytes()}
-			ct.outgoingChannel <- invalidRespFromDestMsg
+			invalidRespFromDestMsg := protocol.TunnelMessage{
+				MsgType: protocol.RESPONSE,
+				MsgData: append(tunnelMsg.MsgData, responseBuff.Bytes()...),
+			}
+			go ms.handleResponseMessages(ct, invalidRespFromDestMsg)
 		}
 	}
 }

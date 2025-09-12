@@ -3,9 +3,12 @@ package server
 import (
 	"bytes"
 	"context"
+	cryptoRand "crypto/rand"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
+	mathRand "math/rand"
 	"net/http"
 	"strconv"
 	"time"
@@ -133,4 +136,21 @@ func createSerializedServerResp(status string, statusCode int, body string) byte
 	resp.Write(&responseBuff)
 
 	return responseBuff
+}
+
+// Generate a random ID from ID_CHARSET of length ID_LENGTH
+func GenerateRandomID() string {
+	var randSeed *mathRand.Rand = mathRand.New(mathRand.NewSource(time.Now().UnixNano()))
+	b := make([]byte, constants.ID_LENGTH)
+	for i := range b {
+		b[i] = constants.ID_CHARSET[randSeed.Intn(len(constants.ID_CHARSET))]
+	}
+	return string(b)
+}
+
+// Generate a random 32-bit unsigned integer
+func GenerateRandomUint32() uint32 {
+	var randomUint32 uint32
+	binary.Read(cryptoRand.Reader, binary.BigEndian, &randomUint32)
+	return randomUint32
 }

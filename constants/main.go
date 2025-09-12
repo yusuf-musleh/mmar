@@ -49,6 +49,7 @@ const (
 	HEARTBEAT_FROM_CLIENT_TIMEOUT = 2
 	READ_DEADLINE                 = 3
 	MAX_REQ_BODY_SIZE             = 10000000 // 10mb
+	REQUEST_ID_BUFF_SIZE          = 4
 
 	CLIENT_DISCONNECT_ERR_TEXT                    = "Tunnel is closed, cannot connect to mmar client."
 	LOCALHOST_NOT_RUNNING_ERR_TEXT                = "Tunneled successfully, but nothing is running on localhost."
