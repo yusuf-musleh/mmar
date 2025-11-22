@@ -368,13 +368,12 @@ func (ms *MmarServer) closeClientTunnel(ct *ClientTunnel) {
 
 func (ms *MmarServer) closeClientTunnelOrConn(ct *ClientTunnel, t protocol.Tunnel) {
 
-	// If client has not reserved subdomain, just close the tcp connection
-	if !ct.ReservedSubdomain() {
-		ms.closeTunnel(&t)
-		return
-	}
+	ms.closeTunnel(&t)
 
-	ms.closeClientTunnel(ct)
+	// If client has reserved subdomain, remove it from tunnels
+	if ct != nil && ct.ReservedSubdomain() {
+		ms.closeClientTunnel(ct)
+	}
 }
 
 func (ms *MmarServer) handleResponseMessages(ct *ClientTunnel, tunnelMsg protocol.TunnelMessage) {
@@ -472,7 +471,7 @@ func (ms *MmarServer) processTunnelMessages(t protocol.Tunnel) {
 
 		if err != nil {
 			logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Receive Message from client tunnel errored: %v", err))
-			if utils.NetworkError(err) {
+			if utils.NetworkError(err) || errors.Is(err, protocol.INVALID_MESSAGE_PROTOCOL_VERSION) {
 				// If error with connection, stop processing messages
 				ms.closeClientTunnelOrConn(ct, t)
 				return
