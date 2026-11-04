@@ -1,5 +1,7 @@
 package constants
 
+import "encoding/hex"
+
 const (
 	MMAR_VERSION = "0.4.0"
 
@@ -79,4 +81,6 @@ var (
 		{"client", "Runs a mmar client. Run this on your machine to expose your localhost on a public URL."},
 		{"version", "Prints the installed version of mmar."},
 	}
+
+	WBSOCKET_CLOSE_BYTES, _ = hex.DecodeString("888000000000")
 )

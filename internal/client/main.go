@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -249,14 +248,8 @@ func (mc *MmarClient) handleRequestMessage(ctx context.Context, tunnelMsg protoc
 			for {
 				select {
 				case <-wsCtx.Done(): // Gracefully terminate goroutine if ctx is cancelled
-					// TODO: Move this to a better spot to be more clean
-					closingWsBytes, decodeErr := hex.DecodeString("888000000000")
-					if decodeErr != nil {
-						log.Fatal("Failed to decode closing hex bytes")
-					}
-
 					// Send close frame to local dev server
-					connReadWriter.Write(closingWsBytes)
+					connReadWriter.Write(constants.WBSOCKET_CLOSE_BYTES)
 					connReadWriter.Flush()
 
 					closeWsMsg := protocol.TunnelMessage{
@@ -415,13 +408,7 @@ func (mc *MmarClient) reconnectTunnel(ctx context.Context) {
 			logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to parse inflight request: %v", incomingReq))
 		}
 
-		// TODO: move this to a better spot to have cleaner code
-		closingWsBytes, decodeErr := hex.DecodeString("888000000000")
-		if decodeErr != nil {
-			log.Fatal("Failed to decode closing hex bytes")
-		}
-
-		wsMsg := WebsocketData{bytes: closingWsBytes}
+		wsMsg := WebsocketData{bytes: constants.WBSOCKET_CLOSE_BYTES}
 
 		inflightRequest.incomingWsChannel <- wsMsg
 
