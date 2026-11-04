@@ -66,7 +66,7 @@ func serializeRequest(ctx context.Context, r *http.Request, cancel context.Cance
 	// Writing & serializing the HTTP Request Line
 	requestBuff.WriteString(
 		fmt.Sprintf(
-			"%v %v %v\nHost: %v\n",
+			"%v %v %v\r\nHost: %v\r\n",
 			r.Method,
 			r.RequestURI,
 			r.Proto,
@@ -80,7 +80,7 @@ func serializeRequest(ctx context.Context, r *http.Request, cancel context.Cance
 	buf := make([]byte, bufferSize)
 	reqBodyBytes := []byte{}
 
-	// Keep reading response until completely read
+	// Keep reading request until completely read
 	for {
 		// Cancel request if read buffer times out
 		readBufferTimeout := time.AfterFunc(
@@ -94,30 +94,35 @@ func serializeRequest(ctx context.Context, r *http.Request, cancel context.Cance
 			cancel(MAX_REQ_BODY_SIZE_ERR)
 			return
 		}
+		if r > 0 {
+			reqBodyBytes = append(reqBodyBytes, buf[:r]...)
+		}
 		if readErr != nil {
 			if errors.Is(readErr, io.EOF) {
-				reqBodyBytes = append(reqBodyBytes, buf[:r]...)
 				break
 			}
 			// Cancel request if there was an error reading
 			cancel(READ_BODY_CHUNK_ERR)
 			return
 		}
-		reqBodyBytes = append(reqBodyBytes, buf[:r]...)
 	}
 
 	// Set actual Content-Length header
-	r.Header.Set("Content-Length", strconv.Itoa(contentLength))
+	if contentLength > 0 {
+		r.Header.Set("Content-Length", strconv.Itoa(contentLength))
+	}
 
 	// Serialize headers
 	r.Header.Clone().Write(&requestBuff)
 
 	// Add new line
+	requestBuff.WriteByte('\r')
 	requestBuff.WriteByte('\n')
 
 	// Write body to buffer
-	requestBuff.Write(reqBodyBytes)
-	requestBuff.WriteByte('\n')
+	if len(reqBodyBytes) != 0 {
+		requestBuff.Write(reqBodyBytes)
+	}
 
 	// Send serialized request through channel
 	serializedRequestChannel <- requestBuff.Bytes()

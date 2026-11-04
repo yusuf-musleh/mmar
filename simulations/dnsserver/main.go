@@ -1,8 +1,10 @@
 package dnsserver
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"log"
 	"net"
 )
@@ -15,7 +17,7 @@ const (
 // addresses with subdomains. By default Go does not resolve localhost
 // addresses containing subdomains, so this basic DNS server always resolves
 // to the IPv6 loopback address "::1"
-func StartDnsServer() {
+func StartDnsServer(ctx context.Context) {
 	addr, err := net.ResolveUDPAddr("udp", LOCALHOST_DNS_SERVER)
 	if err != nil {
 		log.Fatal("Failed to resolve UDP Address", err)
@@ -27,11 +29,27 @@ func StartDnsServer() {
 		log.Fatal("Failed to start Dummy DNS server", err)
 	}
 
+	// goroutine to check cancelled context to shutdown DNS Server
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				udpConn.Close()
+				return
+			default:
+				// do nothing
+			}
+		}
+	}()
+
 	for {
 		buffer := make([]byte, 512)
 		n, udpWriteAddr, err := udpConn.ReadFromUDP(buffer)
 		if err != nil {
-			log.Fatal("Failed to read from UDP connection", err)
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			log.Fatal("Failed to read from UDP connection ", err)
 		}
 
 		go handleDnsConn(udpConn, buffer, n, udpWriteAddr)

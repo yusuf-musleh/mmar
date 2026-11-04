@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"strings"
 	"syscall"
@@ -122,4 +124,41 @@ func EnvVarOrDefault(envVar string, defaultVal string) string {
 		return defaultVal
 	}
 	return envValue
+}
+
+func IsWebSocketHeader(key string, value string) bool {
+	if strings.Contains(key, "connection") && strings.Contains(value, "upgrade") {
+		return true
+	}
+	if strings.Contains(key, "upgrade") && strings.Contains(value, "websocket") {
+		return true
+	}
+
+	return false
+}
+
+// Convert raw bytes of headers received from wire to a key/value map
+func DeserializeHeaders(headerBytes []byte) http.Header {
+	respHeaders := http.Header{}
+	headerLines := bytes.Split(headerBytes, []byte("\r\n"))
+
+	// Loop through header lines, skip the first line since that is the HTTP status line
+	for _, headerLine := range headerLines[1:] {
+
+		header := string(headerLine)
+
+		headerKeyValue := strings.Split(header, ": ")
+		// We reached the end of the headers
+		if len(headerKeyValue) < 2 {
+			break
+		}
+		hKey := strings.ToLower(headerKeyValue[0])
+		hValue := headerKeyValue[1]
+		hValues := strings.Split(hValue, ", ")
+		for _, hVal := range hValues {
+			respHeaders.Add(hKey, hVal)
+		}
+
+	}
+	return respHeaders
 }

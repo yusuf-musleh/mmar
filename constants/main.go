@@ -1,7 +1,7 @@
 package constants
 
 const (
-	MMAR_VERSION = "0.3.0"
+	MMAR_VERSION = "0.4.0"
 
 	VERSION_CMD       = "version"
 	SERVER_CMD        = "server"
@@ -45,11 +45,13 @@ const (
 	TUNNEL_CREATE_TIMEOUT         = 3
 	REQ_BODY_READ_CHUNK_TIMEOUT   = 3
 	DEST_REQUEST_TIMEOUT          = 30
+	DEST_DIAL_TIMEOUT             = 3
 	HEARTBEAT_FROM_SERVER_TIMEOUT = 5
 	HEARTBEAT_FROM_CLIENT_TIMEOUT = 2
 	READ_DEADLINE                 = 3
 	MAX_REQ_BODY_SIZE             = 10000000 // 10mb
 	REQUEST_ID_BUFF_SIZE          = 4
+	WEBSOCKET_CHANNEL_BUFFER_SZE  = 256
 
 	CLIENT_DISCONNECT_ERR_TEXT                    = "Tunnel is closed, cannot connect to mmar client."
 	LOCALHOST_NOT_RUNNING_ERR_TEXT                = "Tunneled successfully, but nothing is running on localhost."
@@ -57,9 +59,10 @@ const (
 	READ_BODY_CHUNK_ERR_TEXT                      = "Error reading request body"
 	READ_BODY_CHUNK_TIMEOUT_ERR_TEXT              = "Timeout reading request body"
 	READ_RESP_BODY_ERR_TEXT                       = "Could not read response from destination server, check your server's logs for any errors."
+	READ_REQ_FROM_SRC_ERR_TEXT                    = "Could not parse request from source"
 	MAX_REQ_BODY_SIZE_ERR_TEXT                    = "Request too large"
 	FAILED_TO_FORWARD_TO_MMAR_CLIENT_ERR_TEXT     = "Failed to forward request to mmar client"
-	FAILED_TO_READ_RESP_FROM_MMAR_CLIENT_ERR_TEXT = "Fail to read response from mmad client"
+	FAILED_TO_READ_RESP_FROM_MMAR_CLIENT_ERR_TEXT = "Failed to read response from mmar client"
 
 	// TERMINAL ANSI ESCAPED COLORS
 	DEFAULT_COLOR = ""
