@@ -19,7 +19,9 @@ jobs:
         go-version: '1.23'
 
     - name: Build
-      run: go build -o ./simulations/mmar ./cmd/mmar/main.go
+      run: |
+        go build -o ./simulations/mmar ./cmd/mmar/main.go
+        go build -o ./simulations/websocketserver/websocketserver ./simulations/websocketserver/main.go
 
     - name: Test
-      run: go test -v ./...
+      run: go test -v -count=3 ./...
