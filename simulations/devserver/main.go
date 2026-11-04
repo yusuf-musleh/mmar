@@ -2,6 +2,7 @@ package devserver
 
 import (
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -110,10 +111,14 @@ func handleGetFail(w http.ResponseWriter, r *http.Request) {
 
 func handlePost(w http.ResponseWriter, r *http.Request) {
 	// Include echo of request headers/body in response to confirm they were received
-	var reqBody interface{}
-	jsonDecoder := json.NewDecoder(r.Body)
-	err := jsonDecoder.Decode(&reqBody)
+	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
+		log.Fatal("Failed to read request body", err)
+	}
+	defer r.Body.Close()
+
+	var reqBody interface{}
+	if err := json.Unmarshal(bodyBytes, &reqBody); err != nil {
 		log.Fatal("Failed to decode request body to json", err)
 	}
 
@@ -131,9 +136,9 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Fatalf("Failed to marshal response for POST: %v", err)
 	}
-
+	respBodySize := strconv.Itoa(len(respBody))
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Length", strconv.Itoa(len(respBody)))
+	w.Header().Set("Content-Length", respBodySize)
 	// Add custom header to response to confirm to confirm that they
 	// propograte when going through mmar
 	w.Header().Set("Simulation-Header", "devserver-handle-post-success")

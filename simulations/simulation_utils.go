@@ -76,6 +76,16 @@ func extractTunnelURL(clientStdout string) string {
 	return re.FindString(clientStdout)
 }
 
+func extractWsServerPort(stdout string) string {
+	re := regexp.MustCompile(`http:\/\/[^X]*:(\d+)\s`)
+	matches := re.FindStringSubmatch(stdout)
+	if len(matches) > 1 {
+		return matches[1]
+	}
+
+	return ""
+}
+
 func initCustomDialer() *net.Dialer {
 	// Adding custom resolver that points to our simulated DNS Server to
 	// handle subdomain on localhost

@@ -1,9 +1,11 @@
 package logger
 
 import (
+	"bufio"
 	"fmt"
 	"html"
 	"log"
+	"net"
 	"net/http"
 	"strconv"
 
@@ -28,6 +30,10 @@ func (wrw *WrappedResponseWriter) WriteHeader(statusCode int) {
 func (wrw *WrappedResponseWriter) Write(data []byte) (int, error) {
 	wrw.contentLength = int64(len(data))
 	return wrw.ResponseWriter.Write(data)
+}
+
+func (wrw *WrappedResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return wrw.ResponseWriter.(http.Hijacker).Hijack()
 }
 
 func ColorLogStr(color string, logstr string) string {

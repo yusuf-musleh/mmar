@@ -31,6 +31,9 @@ const (
 	HEARTBEAT_FROM_SERVER
 	HEARTBEAT_ACK
 	INVALID_RESP_FROM_DEST
+	INVALID_REQ_FROM_SRC
+	WEBSOCKET_MESSAGE
+	WEBSOCKET_CLOSE
 )
 
 var INVALID_MESSAGE_PROTOCOL_VERSION = errors.New("Invalid Message Protocol Version")
@@ -39,7 +42,7 @@ var INVALID_MESSAGE_TYPE = errors.New("Invalid Tunnel Message Type")
 func isValidTunnelMessageType(mt uint8) (uint8, error) {
 	// Iterate through all the message type, from first to last, checking
 	// if the provided message type matches one of them
-	for msgType := REQUEST; msgType <= INVALID_RESP_FROM_DEST; msgType++ {
+	for msgType := REQUEST; msgType <= WEBSOCKET_CLOSE; msgType++ {
 		if mt == msgType {
 			return msgType, nil
 		}
@@ -55,6 +58,7 @@ func TunnelErrState(errState uint8) string {
 		LOCALHOST_NOT_RUNNING:  constants.LOCALHOST_NOT_RUNNING_ERR_TEXT,
 		DEST_REQUEST_TIMEDOUT:  constants.DEST_REQUEST_TIMEDOUT_ERR_TEXT,
 		INVALID_RESP_FROM_DEST: constants.READ_RESP_BODY_ERR_TEXT,
+		INVALID_REQ_FROM_SRC:   constants.READ_REQ_FROM_SRC_ERR_TEXT,
 	}
 	fallbackErr := "An error occured while attempting to tunnel."
 

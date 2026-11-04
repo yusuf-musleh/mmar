@@ -39,11 +39,12 @@ type MmarServer struct {
 }
 
 type IncomingRequest struct {
-	responseChannel chan OutgoingResponse
-	responseWriter  http.ResponseWriter
-	request         *http.Request
-	cancel          context.CancelCauseFunc
-	ctx             context.Context
+	responseChannel   chan OutgoingResponse
+	responseWriter    http.ResponseWriter
+	outgoingWsChannel chan WebsocketData
+	request           *http.Request
+	cancel            context.CancelCauseFunc
+	ctx               context.Context
 }
 
 type OutgoingResponse struct {
@@ -53,41 +54,14 @@ type OutgoingResponse struct {
 
 type RequestId uint32
 
+type WebsocketData struct {
+	bytes []byte
+}
+
 // Tunnel to Client
 type ClientTunnel struct {
 	protocol.Tunnel
-	incomingChannel  chan IncomingRequest
-	outgoingChannel  chan protocol.TunnelMessage
 	inflightRequests *sync.Map
-}
-
-func (ct *ClientTunnel) drainChannels() {
-	// Drain all incoming requests to tunnel and cancel them
-incomingDrainerLoop:
-	for {
-		select {
-		case incoming, _ := <-ct.incomingChannel:
-			// Cancel incoming requests
-			incoming.cancel(CLIENT_DISCONNECTED_ERR)
-		default:
-			// Close the TunneledRequests channel
-			close(ct.incomingChannel)
-			break incomingDrainerLoop
-		}
-	}
-
-	// Draining all outgoing requests from tunnel
-OutgoingDrainerLoop:
-	for {
-		select {
-		case <-ct.outgoingChannel:
-			// Just draining, do nothing
-		default:
-			// Close the TunneledResponses channel
-			close(ct.outgoingChannel)
-			break OutgoingDrainerLoop
-		}
-	}
 }
 
 func (ct *ClientTunnel) close(graceful bool) {
@@ -99,9 +73,6 @@ func (ct *ClientTunnel) close(graceful bool) {
 			ct.Conn.RemoteAddr().String(),
 		),
 	)
-
-	// Drain channels before closing them to prevent panics if there are blocked writes
-	ct.drainChannels()
 
 	if graceful {
 		// Wait a little for final response to complete, then close the connection
@@ -204,15 +175,20 @@ func (ms *MmarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Create response channel to receive response for tunneled request
 		respChannel := make(chan OutgoingResponse)
 
+		// Create a websocket channel to receive websocket data from tunnel
+		outgoingWsChannel := make(chan WebsocketData, constants.WEBSOCKET_CHANNEL_BUFFER_SZE)
+
 		// Add request to client's inflight requests
 		reqId := clientTunnel.GenerateUniqueRequestID()
 		incomingReq := IncomingRequest{
-			responseChannel: respChannel,
-			responseWriter:  w,
-			request:         r,
-			cancel:          cancel,
-			ctx:             ctx,
+			responseChannel:   respChannel,
+			responseWriter:    w,
+			outgoingWsChannel: outgoingWsChannel,
+			request:           r,
+			cancel:            cancel,
+			ctx:               ctx,
 		}
+		// TODO: move the store to one shot LoadOrStore, possibly inside GenerateUniqueRequestID
 		clientTunnel.inflightRequests.Store(reqId, incomingReq)
 
 		// Construct Request message data
@@ -233,14 +209,84 @@ func (ms *MmarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			clientTunnel.inflightRequests.Delete(reqId)
 			return
 		case resp, _ := <-respChannel: // Await response for tunneled request
-			// Add header to close the connection
-			w.Header().Set("Connection", "close")
+			// Websockets/Switching protocol
+			if resp.statusCode == http.StatusSwitchingProtocols {
+				w.WriteHeader(resp.statusCode)
 
-			// Write response headers with response status code to original client
-			w.WriteHeader(resp.statusCode)
+				// Write the response body to original client
+				w.Write(resp.body)
 
-			// Write the response body to original client
-			w.Write(resp.body)
+				hj, ok := w.(http.Hijacker)
+				if !ok {
+					log.Fatalln(w, "webserver doesn't support hijacking", http.StatusInternalServerError)
+					return
+				}
+				conn, bufrw, err := hj.Hijack()
+				if err != nil {
+					log.Fatalln(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				defer conn.Close()
+
+				// Fire goroutine to read websocket data from external client connection
+				go func() {
+					bufferSize := 2048
+					buf := make([]byte, bufferSize)
+					for {
+						r, readErr := bufrw.Read(buf)
+
+						if ctx.Err() != nil {
+							return
+						}
+
+						if r > 0 {
+							websocketData := append(reqIdBuff, buf[:r]...)
+							websocketMsg := protocol.TunnelMessage{
+								MsgType: protocol.WEBSOCKET_MESSAGE,
+								MsgData: websocketData,
+							}
+
+							if err := clientTunnel.SendMessage(websocketMsg); err != nil {
+								logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to send WEBSOCKET_MESSAGE msg to client: %v", err))
+								cancel(context.Cause(ctx))
+								return
+							}
+						}
+
+						if readErr != nil {
+							if errors.Is(readErr, io.EOF) {
+								return
+							}
+							log.Fatal(readErr)
+						}
+					}
+				}()
+
+				for {
+					select {
+					case <-ctx.Done(): // Request is canceled or Tunnel is closed if context is canceled
+						handleCancel(context.Cause(ctx), w)
+						clientTunnel.inflightRequests.Delete(reqId)
+						return
+					case outWs, _ := <-outgoingWsChannel: // Handle websocket data from tunnel (mmar client)
+						bufrw.Write(outWs.bytes)
+						if flushErr := bufrw.Flush(); flushErr != nil {
+							log.Fatal("Failed to flush bufrw", flushErr)
+						}
+					}
+				}
+
+			} else {
+				// Write response headers with response status code to original client
+				w.WriteHeader(resp.statusCode)
+
+				// Write the response body to original client
+				w.Write(resp.body)
+
+				// Remove from inflight requests after sending response back
+				clientTunnel.inflightRequests.Delete(reqId)
+			}
+
 		}
 	}
 }
@@ -284,18 +330,12 @@ func (ms *MmarServer) newClientTunnel(tunnel protocol.Tunnel, subdomain string) 
 
 	tunnel.Id = uniqueSubdomain
 
-	// Create channels to tunnel requests to and recieve responses from
-	incomingChannel := make(chan IncomingRequest)
-	outgoingChannel := make(chan protocol.TunnelMessage)
-
 	// Initialize inflight requests map for client tunnel
 	var inflightRequests sync.Map
 
 	// Create client tunnel
 	clientTunnel := ClientTunnel{
 		tunnel,
-		incomingChannel,
-		outgoingChannel,
 		&inflightRequests,
 	}
 
@@ -350,6 +390,9 @@ func (ms *MmarServer) closeTunnel(t *protocol.Tunnel) {
 }
 
 func (ms *MmarServer) closeClientTunnel(ct *ClientTunnel) {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+
 	// Remove Client Tunnel from clients
 	delete(ms.clients, ct.Id)
 
@@ -387,9 +430,9 @@ func (ms *MmarServer) handleResponseMessages(ct *ClientTunnel, tunnelMsg protoco
 		return
 	}
 
-	// Get Inflight Request and remove it from inflight requests
+	// Get Inflight Request
 	reqId := RequestId(binary.LittleEndian.Uint32(reqIdBuff))
-	inflight, loaded := ct.inflightRequests.LoadAndDelete(reqId)
+	inflight, loaded := ct.inflightRequests.Load(reqId)
 	if !loaded {
 		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("[%s] Failed to identify inflight request: %v", ct.Tunnel.Id, reqId))
 		return
@@ -418,17 +461,15 @@ func (ms *MmarServer) handleResponseMessages(ct *ClientTunnel, tunnelMsg protoco
 
 	respBody, respBodyErr := io.ReadAll(resp.Body)
 	if respBodyErr != nil {
-		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to parse response body: %v\n\n", respBodyErr))
+		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("Failed to parse response body: %v %v\n", respBodyErr, len(respBody)))
 		inflightRequest.cancel(READ_RESP_BODY_ERR)
 		return
 	}
 
-	defer resp.Body.Close()
-
 	// Set headers for response
 	for hKey, hVal := range resp.Header {
 		inflightRequest.responseWriter.Header().Set(hKey, hVal[0])
-		// Add remaining values for header if more than than one exists
+		// Add remaining values for header if more than one exists
 		for i := 1; i < len(hVal); i++ {
 			inflightRequest.responseWriter.Header().Add(hKey, hVal[i])
 		}
@@ -441,6 +482,73 @@ func (ms *MmarServer) handleResponseMessages(ct *ClientTunnel, tunnelMsg protoco
 	case inflightRequest.responseChannel <- OutgoingResponse{statusCode: resp.StatusCode, body: respBody}:
 		// Send response data back
 	}
+}
+
+func (ms *MmarServer) handleWebsocketMessages(ct *ClientTunnel, tunnelMsg protocol.TunnelMessage) {
+	respReader := bufio.NewReader(bytes.NewReader(tunnelMsg.MsgData))
+
+	// Extract RequestId
+	reqIdBuff := make([]byte, constants.REQUEST_ID_BUFF_SIZE)
+	_, err := io.ReadFull(respReader, reqIdBuff)
+	if err != nil {
+		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("[%s] - Failed to parse RequestId for websocket message: %v\n", ct.Tunnel.Id, err))
+		return
+	}
+
+	// Get Inflight Request
+	reqId := RequestId(binary.LittleEndian.Uint32(reqIdBuff))
+	inflight, loaded := ct.inflightRequests.Load(reqId)
+	if !loaded {
+		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("[%s] Failed to identify inflight websocket request: %v. External client likely closed connection.", ct.Tunnel.Id, reqId))
+		return
+	}
+
+	inflightRequest, ok := inflight.(IncomingRequest)
+	if !ok {
+		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("[%s] Failed to parse inflight request: %v", ct.Tunnel.Id, reqId))
+		return
+	}
+
+	// Extract the websocket data
+	wsBytes := tunnelMsg.MsgData[constants.REQUEST_ID_BUFF_SIZE:]
+
+	select {
+	case <-inflightRequest.ctx.Done():
+		// Request is canceled, do nothing
+		return
+	case inflightRequest.outgoingWsChannel <- WebsocketData{bytes: wsBytes}:
+		// Send websocket data back
+	}
+
+}
+
+func (ms *MmarServer) handleWebsocketClose(ct *ClientTunnel, tunnelMsg protocol.TunnelMessage) {
+	respReader := bufio.NewReader(bytes.NewReader(tunnelMsg.MsgData))
+
+	// Extract RequestId
+	reqIdBuff := make([]byte, constants.REQUEST_ID_BUFF_SIZE)
+	_, err := io.ReadFull(respReader, reqIdBuff)
+	if err != nil {
+		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("[%s] - Failed to parse RequestId for websocket close: %v\n", ct.Tunnel.Id, err))
+		return
+	}
+
+	// Get Inflight Request
+	reqId := RequestId(binary.LittleEndian.Uint32(reqIdBuff))
+	inflight, loaded := ct.inflightRequests.Load(reqId)
+	if !loaded {
+		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("[%s] Failed to identify inflight websocket request: %v. External client likely closed connection.", ct.Tunnel.Id, reqId))
+		return
+	}
+
+	inflightRequest, ok := inflight.(IncomingRequest)
+	if !ok {
+		logger.Log(constants.DEFAULT_COLOR, fmt.Sprintf("[%s] Failed to parse inflight request: %v", ct.Tunnel.Id, reqId))
+		return
+	}
+
+	wsErr := errors.New("mmar client closed websocket connection")
+	inflightRequest.cancel(wsErr)
 }
 
 func (ms *MmarServer) processTunnelMessages(t protocol.Tunnel) {
@@ -538,7 +646,8 @@ func (ms *MmarServer) processTunnelMessages(t protocol.Tunnel) {
 		case protocol.LOCALHOST_NOT_RUNNING:
 			// Create a response for Tunnel connected but localhost not running
 			errState := protocol.TunnelErrState(protocol.LOCALHOST_NOT_RUNNING)
-			responseBuff := createSerializedServerResp("200 OK", http.StatusOK, errState)
+			respStatus := http.StatusOK
+			responseBuff := createSerializedServerResp(http.StatusText(respStatus), respStatus, errState)
 			notRunningMsg := protocol.TunnelMessage{
 				MsgType: protocol.RESPONSE,
 				MsgData: append(tunnelMsg.MsgData, responseBuff.Bytes()...),
@@ -547,7 +656,8 @@ func (ms *MmarServer) processTunnelMessages(t protocol.Tunnel) {
 		case protocol.DEST_REQUEST_TIMEDOUT:
 			// Create a response for Tunnel connected but localhost took too long to respond
 			errState := protocol.TunnelErrState(protocol.DEST_REQUEST_TIMEDOUT)
-			responseBuff := createSerializedServerResp("200 OK", http.StatusOK, errState)
+			respStatus := http.StatusOK
+			responseBuff := createSerializedServerResp(http.StatusText(respStatus), respStatus, errState)
 			destTimedoutMsg := protocol.TunnelMessage{
 				MsgType: protocol.RESPONSE,
 				MsgData: append(tunnelMsg.MsgData, responseBuff.Bytes()...),
@@ -569,12 +679,20 @@ func (ms *MmarServer) processTunnelMessages(t protocol.Tunnel) {
 		case protocol.INVALID_RESP_FROM_DEST:
 			// Create a response for receiving invalid response from destination server
 			errState := protocol.TunnelErrState(protocol.INVALID_RESP_FROM_DEST)
-			responseBuff := createSerializedServerResp("500 Internal Server Error", http.StatusInternalServerError, errState)
+			respStatus := http.StatusInternalServerError
+			responseBuff := createSerializedServerResp(http.StatusText(respStatus), respStatus, errState)
 			invalidRespFromDestMsg := protocol.TunnelMessage{
 				MsgType: protocol.RESPONSE,
 				MsgData: append(tunnelMsg.MsgData, responseBuff.Bytes()...),
 			}
 			go ms.handleResponseMessages(ct, invalidRespFromDestMsg)
+		case protocol.WEBSOCKET_MESSAGE:
+			// Dont fire a goroutine for this one to make sure we
+			// handle websocket messages in order, since its possible for
+			// a large websocket message to be split over multiple frames
+			ms.handleWebsocketMessages(ct, tunnelMsg)
+		case protocol.WEBSOCKET_CLOSE:
+			go ms.handleWebsocketClose(ct, tunnelMsg)
 		}
 	}
 }
