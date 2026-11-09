@@ -50,6 +50,177 @@ type IncomingRequest struct {
 	incomingWsChannel chan WebsocketData
 }
 
+type ExchangeContext struct {
+	originalReq    *http.Request
+	connReadWriter *bufio.ReadWriter
+	msgData        []byte
+}
+
+func (mc *MmarClient) handleWebsocketUpgradeResp(ctx context.Context, reqIdBuff []byte, respEC ExchangeContext, fwdConn net.Conn, respHeaders http.Header) {
+	wsCtx, wsCtxCancel := context.WithCancel(ctx)
+	defer wsCtxCancel()
+
+	// Remove read/write deadlines since we need the connection open for websockets
+	fwdConn.SetReadDeadline(time.Time{})
+	fwdConn.SetWriteDeadline(time.Time{})
+
+	// Construct Switching Protocol response
+	var responseBuff bytes.Buffer
+	resp := &http.Response{
+		Status:     http.StatusText(http.StatusSwitchingProtocols),
+		StatusCode: http.StatusSwitchingProtocols,
+		Body:       io.NopCloser(bytes.NewBufferString("")),
+	}
+
+	resp.Header = respHeaders
+
+	resp.Write(&responseBuff)
+	respEC.msgData = append(respEC.msgData, responseBuff.Bytes()...)
+
+	// Send back Switching Protocol response
+	respMessage := protocol.TunnelMessage{MsgType: protocol.RESPONSE, MsgData: respEC.msgData}
+	if err := mc.SendMessage(respMessage); err != nil {
+		log.Fatal(err)
+	}
+
+	logger.LogHTTP(respEC.originalReq, resp.StatusCode, resp.ContentLength, false, true)
+
+	// Fire a goroutine to read websocket data from mmar server
+	// it uses the request ID to determine which channel to send to,
+	// allowing multiple websocket connections to be opened
+	incomingWsChannel := make(chan WebsocketData, constants.WEBSOCKET_CHANNEL_BUFFER_SZE)
+	// Get Inflight Request
+	reqId := RequestId(binary.LittleEndian.Uint32(reqIdBuff))
+	// Construct IncomingRequest
+	incomingReq := IncomingRequest{
+		incomingWsChannel: incomingWsChannel,
+	}
+	mc.inflightRequests.Store(reqId, incomingReq)
+	go func() {
+		for {
+			select {
+			case <-wsCtx.Done(): // Gracefully terminate goroutine if ctx is cancelled
+				// Send close frame to local dev server
+				respEC.connReadWriter.Write(constants.WBSOCKET_CLOSE_BYTES)
+				respEC.connReadWriter.Flush()
+
+				closeWsMsg := protocol.TunnelMessage{
+					MsgType: protocol.WEBSOCKET_CLOSE,
+					MsgData: reqIdBuff,
+				}
+				if err := mc.SendMessage(closeWsMsg); err != nil {
+					log.Println("Failed to send WS Close Message to mmar server.", err)
+				}
+
+				mc.inflightRequests.Delete(reqId)
+				return
+			case incomingWsData, ok := <-incomingWsChannel:
+				if !ok {
+					return
+				}
+				// Forward data received from mmar sever to local dev server
+				_, fwdWsDataErr := respEC.connReadWriter.Write(incomingWsData.bytes)
+				wsDataFlushErr := respEC.connReadWriter.Flush()
+				if fwdWsDataErr != nil || wsDataFlushErr != nil {
+					log.Fatal("Failed to forward websocket data to local server", fwdWsDataErr, wsDataFlushErr)
+				}
+			}
+		}
+	}()
+
+	// Reading websocket data from local dev server connection
+	bufferSize := 2048
+	buf := make([]byte, bufferSize)
+	for {
+		r, readErr := respEC.connReadWriter.Read(buf)
+
+		if r > 0 {
+
+			// Ignore sending back WS server-to-client close bytes
+			// that have no code and no reason [0x88 0x00]
+			serverToClientClose := []byte{136, 0}
+			if !bytes.Equal(buf[:r], serverToClientClose) {
+				// Send back data from local dev server to mmar server
+				websocketData := append(reqIdBuff, buf[:r]...)
+				websocketMsg := protocol.TunnelMessage{
+					MsgType: protocol.WEBSOCKET_MESSAGE,
+					MsgData: websocketData,
+				}
+
+				if err := mc.SendMessage(websocketMsg); err != nil {
+					logger.Log(constants.DEFAULT_COLOR, "Failed to forward WS message to mmar server, cancelling WS connection to local server...")
+					wsCtxCancel()
+				}
+			}
+		}
+
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				return
+			}
+			log.Fatal(readErr)
+		}
+	}
+}
+
+func (mc *MmarClient) handleHttpResp(respEC ExchangeContext, headerLines [][]byte, httpStatusCode []byte, respHeaders http.Header) {
+	var bodyBuffer []byte
+	var cl int
+	var respErr error
+
+	// Check for transfer-encoding first
+	if respHeaders.Get("transfer-encoding") != "" {
+		bodyBuffer, cl, respErr = processChunkedResponse(respEC.connReadWriter)
+		if respErr != nil {
+			invalidRespFromDestMsg := protocol.TunnelMessage{MsgType: protocol.INVALID_RESP_FROM_DEST, MsgData: respEC.msgData}
+			if err := mc.SendMessage(invalidRespFromDestMsg); err != nil {
+				log.Fatal(err)
+			}
+			return
+		}
+
+		respHeaders.Del("transfer-encoding")
+		respHeaders.Set("content-length", strconv.Itoa(cl))
+	} else {
+		respContentLength := respHeaders.Get("content-length")
+		if respContentLength != "" {
+			bodyBuffer, cl, respErr = processContentLengthResp(respContentLength, respEC.connReadWriter)
+			if respErr != nil {
+				invalidRespFromDestMsg := protocol.TunnelMessage{MsgType: protocol.INVALID_RESP_FROM_DEST, MsgData: respEC.msgData}
+				if err := mc.SendMessage(invalidRespFromDestMsg); err != nil {
+					log.Fatal(err)
+				}
+				return
+			}
+		}
+	}
+
+	// Append HTTP status line to msg
+	respEC.msgData = append(respEC.msgData, headerLines[0]...)
+	respEC.msgData = append(respEC.msgData, []byte("\r\n")...)
+
+	// Append response headers to msg
+	headersBuffer := bytes.NewBuffer(nil)
+	respHeaders.Write(headersBuffer)
+	respEC.msgData = append(respEC.msgData, headersBuffer.Bytes()...)
+	respEC.msgData = append(respEC.msgData, []byte("\r\n")...)
+
+	// Append response body to msg
+	respEC.msgData = append(respEC.msgData, bodyBuffer...)
+	// Send back response read from local dev server to mmar server
+	respMessage := protocol.TunnelMessage{MsgType: protocol.RESPONSE, MsgData: respEC.msgData}
+	if err := mc.SendMessage(respMessage); err != nil {
+		log.Fatal(err)
+	}
+
+	statusCode, statusCodeErr := strconv.Atoi(string(httpStatusCode))
+	if statusCodeErr != nil {
+		// Fallback to 0 if status code cannot be converted
+		statusCode = 0
+	}
+	logger.LogHTTP(respEC.originalReq, statusCode, int64(cl), false, true)
+}
+
 // Process requests coming from mmar server and forward them to localhost
 func (mc *MmarClient) handleRequestMessage(ctx context.Context, tunnelMsg protocol.TunnelMessage) {
 	// Extract RequestId
@@ -203,171 +374,18 @@ func (mc *MmarClient) handleRequestMessage(ctx context.Context, tunnelMsg protoc
 
 	respHeaders := utils.DeserializeHeaders(respBytes)
 
-	if upgradeToWebsocket {
-
-		wsCtx, wsCtxCancel := context.WithCancel(ctx)
-		defer wsCtxCancel()
-
-		// Remove read/write deadlines since we need the connection open for websockets
-		fwdConn.SetReadDeadline(time.Time{})
-		fwdConn.SetWriteDeadline(time.Time{})
-
-		// Construct Switching Protocol response
-		var responseBuff bytes.Buffer
-		resp := &http.Response{
-			Status:     http.StatusText(http.StatusSwitchingProtocols),
-			StatusCode: http.StatusSwitchingProtocols,
-			Body:       io.NopCloser(bytes.NewBufferString("")),
-		}
-
-		resp.Header = respHeaders
-
-		resp.Write(&responseBuff)
-		msgData = append(msgData, responseBuff.Bytes()...)
-
-		// Send back Switching Protocol response
-		respMessage := protocol.TunnelMessage{MsgType: protocol.RESPONSE, MsgData: msgData}
-		if err := mc.SendMessage(respMessage); err != nil {
-			log.Fatal(err)
-		}
-
-		logger.LogHTTP(req, resp.StatusCode, resp.ContentLength, false, true)
-
-		// Fire a goroutine to read websocket data from mmar server
-		// it uses the request ID to determine which channel to send to,
-		// allowing multiple websocket connections to be opened
-		incomingWsChannel := make(chan WebsocketData, constants.WEBSOCKET_CHANNEL_BUFFER_SZE)
-		// Get Inflight Request
-		reqId := RequestId(binary.LittleEndian.Uint32(reqIdBuff))
-		// Construct IncomingRequest
-		incomingReq := IncomingRequest{
-			incomingWsChannel: incomingWsChannel,
-		}
-		mc.inflightRequests.Store(reqId, incomingReq)
-		go func() {
-			for {
-				select {
-				case <-wsCtx.Done(): // Gracefully terminate goroutine if ctx is cancelled
-					// Send close frame to local dev server
-					connReadWriter.Write(constants.WBSOCKET_CLOSE_BYTES)
-					connReadWriter.Flush()
-
-					closeWsMsg := protocol.TunnelMessage{
-						MsgType: protocol.WEBSOCKET_CLOSE,
-						MsgData: reqIdBuff,
-					}
-					if err := mc.SendMessage(closeWsMsg); err != nil {
-						log.Println("Failed to send WS Close Message to mmar server.", err)
-					}
-
-					mc.inflightRequests.Delete(reqId)
-					return
-				case incomingWsData, ok := <-incomingWsChannel:
-					if !ok {
-						return
-					}
-					// Forward data received from mmar sever to local dev server
-					_, fwdWsDataErr := connReadWriter.Write(incomingWsData.bytes)
-					wsDataFlushErr := connReadWriter.Flush()
-					if fwdWsDataErr != nil || wsDataFlushErr != nil {
-						log.Fatal("Failed to forward websocket data to local server", fwdWsDataErr, wsDataFlushErr)
-					}
-				}
-			}
-		}()
-
-		// Reading websocket data from local dev server connection
-		bufferSize := 2048
-		buf := make([]byte, bufferSize)
-		for {
-			r, readErr := connReadWriter.Read(buf)
-
-			if r > 0 {
-
-				// Ignore sending back WS server-to-client close bytes
-				// that have no code and no reason [0x88 0x00]
-				serverToClientClose := []byte{136, 0}
-				if !bytes.Equal(buf[:r], serverToClientClose) {
-					// Send back data from local dev server to mmar server
-					websocketData := append(reqIdBuff, buf[:r]...)
-					websocketMsg := protocol.TunnelMessage{
-						MsgType: protocol.WEBSOCKET_MESSAGE,
-						MsgData: websocketData,
-					}
-
-					if err := mc.SendMessage(websocketMsg); err != nil {
-						logger.Log(constants.DEFAULT_COLOR, "Failed to forward WS message to mmar server, cancelling WS connection to local server...")
-						wsCtxCancel()
-					}
-				}
-			}
-
-			if readErr != nil {
-				if errors.Is(readErr, io.EOF) {
-					return
-				}
-				log.Fatal(readErr)
-			}
-		}
-
-	} else {
-		var bodyBuffer []byte
-		var cl int
-		var respErr error
-
-		// Check for transfer-encoding first
-		if respHeaders.Get("transfer-encoding") != "" {
-			bodyBuffer, cl, respErr = processChunkedResponse(connReadWriter)
-			if respErr != nil {
-				invalidRespFromDestMsg := protocol.TunnelMessage{MsgType: protocol.INVALID_RESP_FROM_DEST, MsgData: msgData}
-				if err := mc.SendMessage(invalidRespFromDestMsg); err != nil {
-					log.Fatal(err)
-				}
-				return
-			}
-
-			respHeaders.Del("transfer-encoding")
-			respHeaders.Set("content-length", strconv.Itoa(cl))
-		} else {
-			respContentLength := respHeaders.Get("content-length")
-			if respContentLength != "" {
-				bodyBuffer, cl, respErr = processContentLengthResp(respContentLength, connReadWriter)
-				if respErr != nil {
-					invalidRespFromDestMsg := protocol.TunnelMessage{MsgType: protocol.INVALID_RESP_FROM_DEST, MsgData: msgData}
-					if err := mc.SendMessage(invalidRespFromDestMsg); err != nil {
-						log.Fatal(err)
-					}
-					return
-				}
-			}
-		}
-
-		// Append HTTP status line to msg
-		msgData = append(msgData, headerLines[0]...)
-		msgData = append(msgData, []byte("\r\n")...)
-
-		// Append response headers to msg
-		headersBuffer := bytes.NewBuffer(nil)
-		respHeaders.Write(headersBuffer)
-		msgData = append(msgData, headersBuffer.Bytes()...)
-		msgData = append(msgData, []byte("\r\n")...)
-
-		// Append response body to msg
-		msgData = append(msgData, bodyBuffer...)
-		// Send back response read from local dev server to mmar server
-		respMessage := protocol.TunnelMessage{MsgType: protocol.RESPONSE, MsgData: msgData}
-		if err := mc.SendMessage(respMessage); err != nil {
-			log.Fatal(err)
-		}
-
-		statusCode, statusCodeErr := strconv.Atoi(string(httpStatusCode))
-		if statusCodeErr != nil {
-			// Fallback to 0 if status code cannot be converted
-			statusCode = 0
-		}
-		logger.LogHTTP(req, statusCode, int64(cl), false, true)
+	exchangeContext := ExchangeContext{
+		originalReq:    req,
+		connReadWriter: connReadWriter,
+		msgData:        msgData,
 	}
 
+	if upgradeToWebsocket {
+		mc.handleWebsocketUpgradeResp(ctx, reqIdBuff, exchangeContext, fwdConn, respHeaders)
+		return
+	}
+
+	mc.handleHttpResp(exchangeContext, headerLines, httpStatusCode, respHeaders)
 }
 
 func (mc *MmarClient) handleWebsocketMessage(ctx context.Context, tunnelMsg protocol.TunnelMessage) {
