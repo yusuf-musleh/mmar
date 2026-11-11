@@ -1119,16 +1119,15 @@ func verifyWsRapidConnectDisconnectHandled(t *testing.T, tunnelUrl string, wg *s
 
 		closeErr1 := wsConn.Close(websocket.StatusNormalClosure, "Close")
 		if closeErr1 != nil {
-			if errors.Is(closeErr1, context.DeadlineExceeded) {
+			if !errors.Is(closeErr1, context.DeadlineExceeded) {
 				t.Errorf("Failed to close WS connection 1: %v", closeErr1)
 			}
-
 			return
 		}
 
 		closeErr2 := wsConn2.Close(websocket.StatusNormalClosure, "Close")
 		if closeErr2 != nil {
-			if errors.Is(closeErr2, context.DeadlineExceeded) {
+			if !errors.Is(closeErr2, context.DeadlineExceeded) {
 				t.Errorf("Failed to close WS connection 2: %v", closeErr2)
 			}
 			return
@@ -1136,7 +1135,7 @@ func verifyWsRapidConnectDisconnectHandled(t *testing.T, tunnelUrl string, wg *s
 
 		closeErr3 := wsConn3.Close(websocket.StatusNormalClosure, "Close")
 		if closeErr3 != nil {
-			if errors.Is(closeErr3, context.DeadlineExceeded) {
+			if !errors.Is(closeErr3, context.DeadlineExceeded) {
 				t.Errorf("Failed to close WS connection 3: %v", closeErr3)
 			}
 			return
