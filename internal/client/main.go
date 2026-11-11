@@ -445,6 +445,10 @@ func (mc *MmarClient) reconnectTunnel(ctx context.Context) {
 			constants.TUNNEL_CREATE_TIMEOUT*time.Second,
 		)
 		if err != nil {
+			if errors.Is(err, protocol.INVALID_MESSAGE_PROTOCOL_VERSION) {
+				logger.Log(constants.YELLOW, "The mmar message protocol has been updated, please update mmar.")
+				os.Exit(0)
+			}
 			time.Sleep(constants.TUNNEL_RECONNECT_TIMEOUT * time.Second)
 			continue
 		}
