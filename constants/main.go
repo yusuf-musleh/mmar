@@ -3,7 +3,7 @@ package constants
 import "encoding/hex"
 
 const (
-	MMAR_VERSION = "0.4.0"
+	MMAR_VERSION = "0.4.3"
 
 	VERSION_CMD       = "version"
 	SERVER_CMD        = "server"
