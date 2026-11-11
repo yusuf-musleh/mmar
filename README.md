@@ -23,13 +23,13 @@ It allows you to quickly share what you are working on locally with others witho
 - Super simple to use
 - Provides "mmar.dev" to tunnel for free on a generated subdomain
 - Expose multiple ports on different subdomains
+- Supports Websockets
 - Live logs of requests coming into your localhost server
 - Zero dependencies
 - Self-host your own mmar server to have full control
 
 ### Limitations
 
-- Currently only supports the HTTP protocol, other protocols such as websockets were not tested and will likely not work
 - Requests through mmar are limited to 10mb in size, however this could be made configurable in the future
 - There is a limit of 5 mmar tunnels per IP to avoid abuse, this could also be made configurable in the future
 
